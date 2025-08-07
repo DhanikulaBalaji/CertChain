@@ -1,6 +1,6 @@
 # 🎓 Secure Blockchain-Based Certificate Generation and Validation Framework
 
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/yourusername/certificate-system)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/pinnamanenipraneeth08/certificate-system)
 [![Python](https://img.shields.io/badge/Python-3.8+-green)](https://python.org)
 [![React](https://img.shields.io/badge/React-18+-blue)](https://reactjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-4.9+-blue)](https://typescriptlang.org)
