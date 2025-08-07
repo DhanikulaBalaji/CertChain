@@ -1,0 +1,41 @@
+services:
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cert_backend
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/templates:/app/templates
+      - ./backend/certificates:/app/certificates
+      - ./backend/certificate_system.db:/app/certificate_system.db
+    ports:
+      - "8000:8000"
+    networks:
+      - cert_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cert_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - cert_network
+
+networks:
+  cert_network:
+    driver: bridge
+
+volumes:
+  backend_data:

@@ -1,0 +1,35 @@
+{
+  "name": "certificate-system-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for the certificate system blockchain integration",
+  "main": "deploy_contract.py",
+  "scripts": {
+    "deploy": "python deploy_contract.py",
+    "test": "python test_blockchain.py",
+    "compile": "solc --combined-json abi,bin CertificateRegistry.sol > CertificateRegistry.json",
+    "verify": "python -c \"from test_blockchain import BlockchainTester; import asyncio; tester = BlockchainTester(); asyncio.run(tester.run_tests())\""
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "keywords": [
+    "blockchain",
+    "ethereum",
+    "smart-contracts",
+    "certificates",
+    "web3"
+  ],
+  "author": "Certificate System Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "."
+  },
+  "python": {
+    "requirements": [
+      "web3>=6.0.0",
+      "py-solc-x>=1.12.0",
+      "eth-account>=0.8.0",
+      "eth-utils>=2.0.0"
+    ]
+  }
+}

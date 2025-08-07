@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certificate Issued</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+        }
+        .content {
+            background: #fff;
+            padding: 30px;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+        }
+        .certificate-box {
+            background: #f8f9fa;
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .certificate-id {
+            font-size: 24px;
+            font-weight: bold;
+            color: #28a745;
+            margin-bottom: 10px;
+        }
+        .btn {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 12px 25px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 5px;
+        }
+        .btn-primary { background: #007bff; }
+        .btn-success { background: #28a745; }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 14px;
+        }
+        .icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="icon">🎓</div>
+        <h1>Certificate Issued Successfully!</h1>
+        <p>Congratulations on completing {{ event_name }}</p>
+    </div>
+    
+    <div class="content">
+        <p>Dear {{ recipient_name }},</p>
+        
+        <p>We are pleased to inform you that your certificate has been successfully issued and is now available for download and verification.</p>
+        
+        <div class="certificate-box">
+            <div class="certificate-id">{{ certificate_id }}</div>
+            <p><strong>Event:</strong> {{ event_name }}</p>
+            <p><strong>Recipient:</strong> {{ recipient_name }}</p>
+        </div>
+        
+        <h3>🔐 Blockchain Security</h3>
+        <p>Your certificate has been securely anchored on the blockchain, ensuring:</p>
+        <ul>
+            <li>✅ Tamper-proof verification</li>
+            <li>✅ Immutable record keeping</li>
+            <li>✅ Global accessibility</li>
+            <li>✅ Instant validation</li>
+        </ul>
+        
+        <h3>📱 How to Verify Your Certificate</h3>
+        <p>You can verify your certificate authenticity using any of these methods:</p>
+        <ol>
+            <li><strong>QR Code:</strong> Scan the QR code on your certificate</li>
+            <li><strong>Online Validation:</strong> Use the verification link below</li>
+            <li><strong>Certificate ID:</strong> Enter your certificate ID on our validation portal</li>
+        </ol>
+        
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{{ validation_url }}" class="btn btn-primary">🔍 Verify Certificate</a>
+            <p><small>Validation URL: {{ validation_url }}</small></p>
+        </div>
+        
+        <h3>🎯 What's Next?</h3>
+        <p>Your certificate is now:</p>
+        <ul>
+            <li>Ready to be shared with employers or institutions</li>
+            <li>Instantly verifiable worldwide</li>
+            <li>Permanently stored on the blockchain</li>
+        </ul>
+        
+        <div style="background: #e7f3ff; border-left: 4px solid #007bff; padding: 15px; margin: 20px 0;">
+            <p><strong>💡 Pro Tip:</strong> Keep your certificate ID (<code>{{ certificate_id }}</code>) safe - you'll need it for verification!</p>
+        </div>
+        
+        <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
+        
+        <p>Congratulations once again on your achievement!</p>
+        
+        <p>Best regards,<br>
+        The {{ system_name }} Team</p>
+    </div>
+    
+    <div class="footer">
+        <p>This is an automated message from {{ system_name }}.<br>
+        Please do not reply to this email.</p>
+        <p><small>© {{ system_name }} - Secure Certificate Management System</small></p>
+    </div>
+</body>
+</html>

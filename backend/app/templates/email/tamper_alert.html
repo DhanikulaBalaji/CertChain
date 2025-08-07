@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Alert - Certificate Tampering Detected</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+        }
+        .content {
+            background: #fff;
+            padding: 30px;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+        }
+        .alert-box {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .certificate-id {
+            font-size: 20px;
+            font-weight: bold;
+            color: #dc3545;
+            margin-bottom: 10px;
+        }
+        .btn {
+            display: inline-block;
+            background: #dc3545;
+            color: white;
+            padding: 12px 25px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 5px;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 14px;
+        }
+        .icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        .urgent {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="icon">🚨</div>
+        <h1>SECURITY ALERT</h1>
+        <p>Certificate Tampering Detected</p>
+    </div>
+    
+    <div class="content">
+        <div class="urgent">
+            <p><strong>⚠️ URGENT ACTION REQUIRED:</strong> Our security system has detected potential certificate tampering.</p>
+        </div>
+        
+        <div class="alert-box">
+            <div class="certificate-id">Certificate ID: {{ certificate_id }}</div>
+            <p><strong>Detection Time:</strong> {{ detection_timestamp }}</p>
+            <p><strong>Tamper Details:</strong></p>
+            <div style="background: #fff; padding: 15px; border-radius: 4px; margin: 10px 0;">
+                {{ tamper_details }}
+            </div>
+        </div>
+        
+        <h3>🔍 What Was Detected?</h3>
+        <p>Our multi-layer validation system identified the following security concerns:</p>
+        <ul>
+            <li>Certificate content may have been modified</li>
+            <li>Digital signatures do not match original records</li>
+            <li>Hash verification failed</li>
+            <li>Blockchain validation inconsistencies</li>
+        </ul>
+        
+        <h3>⚡ Immediate Actions Taken</h3>
+        <ul>
+            <li>✅ Certificate has been flagged as suspicious</li>
+            <li>✅ Validation attempts are being logged</li>
+            <li>✅ Security team has been notified</li>
+            <li>✅ Tamper report has been generated</li>
+        </ul>
+        
+        <h3>🛡️ Recommended Actions</h3>
+        <ol>
+            <li><strong>Review the tamper report immediately</strong></li>
+            <li><strong>Contact the certificate holder if necessary</strong></li>
+            <li><strong>Consider revoking the certificate if tampering is confirmed</strong></li>
+            <li><strong>Investigate potential security breaches</strong></li>
+            <li><strong>Update security protocols if needed</strong></li>
+        </ol>
+        
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{{ dashboard_url }}" class="btn">🔍 View Tamper Report</a>
+        </div>
+        
+        <div class="urgent">
+            <p><strong>🔒 Security Note:</strong> This alert is automatically generated when our AI-powered tamper detection system identifies potential security threats. Please investigate promptly to maintain the integrity of your certificate system.</p>
+        </div>
+        
+        <p>If you believe this is a false positive, please review the detailed tamper report and contact the technical team for further analysis.</p>
+        
+        <p>Stay vigilant,<br>
+        {{ system_name }} Security Team</p>
+    </div>
+    
+    <div class="footer">
+        <p>This is an automated security alert from {{ system_name }}.<br>
+        Please take immediate action and do not ignore this message.</p>
+        <p><small>© {{ system_name }} - Secure Certificate Management System</small></p>
+    </div>
+</body>
+</html>

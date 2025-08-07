@@ -1,0 +1,372 @@
+/* Custom styles for the certificate system */
+
+.App {
+  text-align: center;
+}
+
+.App-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 80px 20px;
+  color: white;
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.App-header h1 {
+  font-size: 3.5rem;
+  margin-bottom: 20px;
+  animation: fadeInUp 1s ease-out;
+}
+
+.App-header p {
+  font-size: 1.2rem;
+  opacity: 0.9;
+  animation: fadeInUp 1s ease-out 0.3s both;
+}
+
+/* Animated navbar */
+.animated-navbar {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: all 0.3s ease;
+}
+
+.animated-navbar .navbar-brand:hover {
+  transform: scale(1.05);
+  transition: transform 0.2s ease;
+}
+
+.animated-navbar .nav-link {
+  transition: color 0.2s ease;
+  position: relative;
+}
+
+.animated-navbar .nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background-color: #007bff;
+  transition: all 0.3s ease;
+  transform: translateX(-50%);
+}
+
+.animated-navbar .nav-link:hover::after {
+  width: 80%;
+}
+
+/* Card animations */
+.certificate-card {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  border: none;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.certificate-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 25px rgba(0,0,0,0.15);
+}
+
+/* Button animations */
+.btn-animated {
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-animated:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+/* Loading spinner */
+.loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Status badges */
+.status-active {
+  background-color: #28a745 !important;
+}
+
+.status-revoked {
+  background-color: #dc3545 !important;
+}
+
+.status-suspended {
+  background-color: #ffc107 !important;
+  color: #000 !important;
+}
+
+/* Validation result styles */
+.validation-result {
+  padding: 20px;
+  border-radius: 10px;
+  margin: 20px 0;
+}
+
+.validation-valid {
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+.validation-tampered {
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+}
+
+.validation-suspicious {
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  color: #856404;
+}
+
+/* QR Scanner styles */
+.qr-scanner-container {
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 20px;
+  border: 2px dashed #ddd;
+  border-radius: 10px;
+}
+
+/* Dashboard stats */
+.dashboard-stat-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 15px;
+  padding: 30px;
+  margin-bottom: 20px;
+  transition: transform 0.3s ease;
+}
+
+.dashboard-stat-card:hover {
+  transform: scale(1.02);
+}
+
+.dashboard-stat-card .stat-number {
+  font-size: 2.5rem;
+  font-weight: bold;
+}
+
+.dashboard-stat-card .stat-label {
+  font-size: 1rem;
+  opacity: 0.9;
+}
+
+/* Form styles */
+.form-floating {
+  margin-bottom: 1rem;
+}
+
+.form-control:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+/* File upload area */
+.file-upload-area {
+  border: 2px dashed #ddd;
+  border-radius: 10px;
+  padding: 40px;
+  text-align: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.file-upload-area:hover {
+  border-color: #667eea;
+  background-color: #f8f9ff;
+}
+
+.file-upload-area.dragover {
+  border-color: #667eea;
+  background-color: #f0f0ff;
+}
+
+/* Certificate template preview */
+.certificate-preview {
+  max-width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+/* Blockchain info */
+.blockchain-info {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  padding: 15px;
+  border-radius: 10px;
+  margin: 10px 0;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.pulse-animation {
+  animation: pulse 2s infinite;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .App-header h1 {
+    font-size: 2.5rem;
+  }
+  
+  .dashboard-stat-card {
+    padding: 20px;
+    margin-bottom: 15px;
+  }
+  
+  .dashboard-stat-card .stat-number {
+    font-size: 2rem;
+  }
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+  .card {
+    background-color: #2d3748;
+    border-color: #4a5568;
+  }
+  
+  .card-body {
+    color: #e2e8f0;
+  }
+}
+
+/* Print styles for certificates */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .certificate-print {
+    width: 100%;
+    page-break-inside: avoid;
+  }
+}
+
+/* Navbar dropdown z-index fixes */
+.navbar {
+  z-index: 1030 !important;
+}
+
+.navbar .dropdown-menu {
+  z-index: 1031 !important;
+}
+
+.navbar .dropdown-toggle::after {
+  margin-left: 0.255em;
+}
+
+/* Ensure user dropdown is properly positioned */
+#user-nav-dropdown {
+  z-index: 1032 !important;
+}
+
+#user-nav-dropdown .dropdown-menu {
+  z-index: 1033 !important;
+  right: 0 !important;
+  left: auto !important;
+}
+
+/* Fix notification bell positioning */
+.notification-bell {
+  z-index: 1029 !important;
+}
+
+/* Ensure all navbar dropdowns are above other content */
+.navbar-nav .dropdown-menu {
+  z-index: 1034 !important;
+}
+
+.navbar-nav .dropdown-menu.show {
+  z-index: 1035 !important;
+}
+
+/* User dropdown specific styles */
+.user-dropdown .dropdown-menu {
+  min-width: 200px;
+  z-index: 1036 !important;
+}
+
+.user-dropdown .logout-item {
+  z-index: 1037 !important;
+}
+
+.user-dropdown .logout-item:hover {
+  background-color: #dc3545;
+  color: white;
+}
+
+/* Ensure dropdowns don't interfere with dashboard cards */
+.dashboard-container {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-container .card {
+  position: relative;
+  z-index: 2;
+}
+
+/* Mobile responsive fixes */
+@media (max-width: 991.98px) {
+  .navbar-collapse {
+    background-color: #f8f9fa;
+    padding: 1rem;
+    margin-top: 0.5rem;
+    border-radius: 0.375rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  }
+  
+  .user-dropdown .dropdown-menu {
+    position: static !important;
+    float: none;
+    width: auto;
+    margin-top: 0;
+    background-color: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+}

@@ -1,0 +1,46 @@
+Certificate Issued Successfully!
+
+Dear {{ recipient_name }},
+
+Congratulations on completing {{ event_name }}!
+
+We are pleased to inform you that your certificate has been successfully issued and is now available for download and verification.
+
+Certificate Details:
+- Certificate ID: {{ certificate_id }}
+- Event: {{ event_name }}
+- Recipient: {{ recipient_name }}
+
+BLOCKCHAIN SECURITY:
+Your certificate has been securely anchored on the blockchain, ensuring:
+✓ Tamper-proof verification
+✓ Immutable record keeping  
+✓ Global accessibility
+✓ Instant validation
+
+HOW TO VERIFY YOUR CERTIFICATE:
+You can verify your certificate authenticity using:
+
+1. QR Code: Scan the QR code on your certificate
+2. Online Validation: {{ validation_url }}
+3. Certificate ID: Enter {{ certificate_id }} on our validation portal
+
+WHAT'S NEXT:
+Your certificate is now:
+- Ready to be shared with employers or institutions
+- Instantly verifiable worldwide
+- Permanently stored on the blockchain
+
+💡 Pro Tip: Keep your certificate ID ({{ certificate_id }}) safe - you'll need it for verification!
+
+If you have any questions or need assistance, please contact our support team.
+
+Congratulations once again on your achievement!
+
+Best regards,
+The {{ system_name }} Team
+
+---
+This is an automated message from {{ system_name }}.
+Please do not reply to this email.
+© {{ system_name }} - Secure Certificate Management System

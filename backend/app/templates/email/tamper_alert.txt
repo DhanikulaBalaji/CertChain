@@ -1,0 +1,43 @@
+🚨 SECURITY ALERT - Certificate Tampering Detected 🚨
+
+⚠️ URGENT ACTION REQUIRED: Our security system has detected potential certificate tampering.
+
+Certificate ID: {{ certificate_id }}
+Detection Time: {{ detection_timestamp }}
+
+TAMPER DETAILS:
+{{ tamper_details }}
+
+WHAT WAS DETECTED?
+Our multi-layer validation system identified the following security concerns:
+- Certificate content may have been modified
+- Digital signatures do not match original records  
+- Hash verification failed
+- Blockchain validation inconsistencies
+
+IMMEDIATE ACTIONS TAKEN:
+✓ Certificate has been flagged as suspicious
+✓ Validation attempts are being logged
+✓ Security team has been notified
+✓ Tamper report has been generated
+
+RECOMMENDED ACTIONS:
+1. Review the tamper report immediately
+2. Contact the certificate holder if necessary
+3. Consider revoking the certificate if tampering is confirmed
+4. Investigate potential security breaches
+5. Update security protocols if needed
+
+View Tamper Report: {{ dashboard_url }}
+
+🔒 SECURITY NOTE: This alert is automatically generated when our AI-powered tamper detection system identifies potential security threats. Please investigate promptly to maintain the integrity of your certificate system.
+
+If you believe this is a false positive, please review the detailed tamper report and contact the technical team for further analysis.
+
+Stay vigilant,
+{{ system_name }} Security Team
+
+---
+This is an automated security alert from {{ system_name }}.
+Please take immediate action and do not ignore this message.
+© {{ system_name }} - Secure Certificate Management System

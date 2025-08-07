@@ -1,0 +1,222 @@
+/* Notification Center Styles */
+.notification-center-modal .modal-dialog {
+  max-width: 800px;
+}
+
+.notification-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-bottom: none;
+}
+
+.notification-header .btn-close {
+  filter: invert(1);
+}
+
+.notification-tabs .nav-link {
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-weight: 500;
+  color: #495057;
+  transition: all 0.3s ease;
+}
+
+.notification-tabs .nav-link:hover {
+  border-bottom-color: #667eea;
+  color: #667eea;
+}
+
+.notification-tabs .nav-link.active {
+  background: none;
+  border-bottom-color: #667eea;
+  color: #667eea;
+  font-weight: 600;
+}
+
+.notification-list {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.notification-item {
+  border: none;
+  border-bottom: 1px solid #e9ecef;
+  padding: 1rem;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.notification-item:hover {
+  background-color: #f8f9fa;
+  transform: translateX(5px);
+}
+
+.notification-item.unread {
+  background: linear-gradient(90deg, rgba(102, 126, 234, 0.05) 0%, rgba(255, 255, 255, 1) 100%);
+  border-left: 4px solid #667eea;
+}
+
+.notification-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  animation: pulse 2s infinite;
+}
+
+.notification-icon-success {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+}
+
+.notification-icon-danger {
+  background: linear-gradient(135deg, #dc3545, #fd7e14);
+  color: white;
+}
+
+.notification-icon-info {
+  background: linear-gradient(135deg, #17a2b8, #007bff);
+  color: white;
+}
+
+.notification-icon-primary {
+  background: linear-gradient(135deg, #007bff, #6610f2);
+  color: white;
+}
+
+.notification-icon-secondary {
+  background: linear-gradient(135deg, #6c757d, #495057);
+  color: white;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(102, 126, 234, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
+  }
+}
+
+.notification-content h6 {
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
+}
+
+.notification-content p {
+  color: #6c757d;
+  line-height: 1.4;
+}
+
+.notification-actions {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.notification-item:hover .notification-actions {
+  opacity: 1;
+}
+
+.unread-indicator {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  animation: bounce 1s infinite;
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-5px);
+  }
+  60% {
+    transform: translateY(-3px);
+  }
+}
+
+.notification-controls {
+  background-color: #f8f9fa;
+}
+
+.notification-footer {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-top: 1px solid #dee2e6;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .notification-center-modal .modal-dialog {
+    max-width: 95%;
+    margin: 1rem auto;
+  }
+  
+  .notification-item {
+    padding: 0.75rem;
+  }
+  
+  .notification-icon {
+    width: 35px;
+    height: 35px;
+  }
+  
+  .notification-content h6 {
+    font-size: 0.9rem;
+  }
+  
+  .notification-content p {
+    font-size: 0.8rem;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .notification-item {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    border-bottom-color: #34495e;
+  }
+  
+  .notification-item:hover {
+    background-color: #34495e;
+  }
+  
+  .notification-content h6 {
+    color: #ecf0f1;
+  }
+  
+  .notification-content p {
+    color: #bdc3c7;
+  }
+  
+  .notification-controls {
+    background-color: #2c3e50;
+    border-bottom-color: #34495e;
+  }
+}
+
+/* Animation for notification bell */
+.notification-bell-animation {
+  animation: ring 0.5s ease-in-out;
+}
+
+@keyframes ring {
+  0% { transform: rotate(0); }
+  10% { transform: rotate(30deg); }
+  20% { transform: rotate(-28deg); }
+  30% { transform: rotate(34deg); }
+  40% { transform: rotate(-32deg); }
+  50% { transform: rotate(30deg); }
+  60% { transform: rotate(-28deg); }
+  70% { transform: rotate(26deg); }
+  80% { transform: rotate(-24deg); }
+  90% { transform: rotate(22deg); }
+  100% { transform: rotate(0); }
+}
