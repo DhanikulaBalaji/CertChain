@@ -582,12 +582,9 @@ async def get_admin_certificates(
                 "certificate_id": cert.certificate_id,
                 "recipient_name": cert.recipient_name,
                 "event_name": cert.event.name if cert.event else "Unknown Event",
+                "event_date": cert.event.date.isoformat() if cert.event and cert.event.date else "",
                 "status": cert.status.value if cert.status else "active",
-                "issued_date": cert.issued_at.isoformat() if cert.issued_at else "",
-                "is_verified": cert.is_verified,
-                "pdf_path": cert.pdf_path or "",
-                "event_id": cert.event_id,
-                "recipient_id": cert.recipient_id or 0
+                "issued_date": cert.issued_at.isoformat() if cert.issued_at else ""
             })
         
         return result
