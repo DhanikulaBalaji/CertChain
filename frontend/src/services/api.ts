@@ -248,8 +248,11 @@ export const certificatesAPI = {
   revokeCertificate: (certificateId: string, reason: string) => {
     const formData = new FormData();
     formData.append('reason', reason);
-    return api.put(`/certificates/${certificateId}/revoke`, formData);
+    return api.post(`/certificates/${certificateId}/revoke`, formData);
   },
+
+  reissueCertificate: (certificateId: string) => 
+    api.post(`/certificates/${certificateId}/reissue`),
   
   downloadCertificate: (certificateId: string) => 
     api.get(`/certificates/download/${certificateId}/pdf`, {

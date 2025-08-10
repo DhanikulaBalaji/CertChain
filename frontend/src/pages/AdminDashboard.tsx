@@ -21,9 +21,13 @@ interface Certificate {
   id: number;
   certificate_id: string;
   recipient_name: string;
+  participant_id?: string;
   event_name: string;
   status?: string;  // Make status optional
   issued_date: string;
+  revoked_by?: string;       // Who revoked the certificate
+  revocation_reason?: string; // Why it was revoked
+  revoked_at?: string;       // When it was revoked
 }
 
 interface EventParticipant {
@@ -84,7 +88,7 @@ const AdminDashboard: React.FC = () => {
         console.log('Fetching dashboard data at:', new Date().toLocaleTimeString());
         
         const [eventsRes, certsRes, statsRes] = await Promise.all([
-          api.get('/events/my-events'),
+          api.get('/events/my-events?include_rejected=true'),
           api.get('/certificates/admin-certificates'),
           api.get('/admin/dashboard-stats')
         ]);
@@ -202,7 +206,7 @@ const AdminDashboard: React.FC = () => {
       console.log('Fetching dashboard data at:', new Date().toLocaleTimeString());
       
       const [eventsRes, certsRes, statsRes] = await Promise.all([
-        api.get('/events/my-events'),
+        api.get('/events/my-events?include_rejected=true'),
         api.get('/certificates/admin-certificates'),
         api.get('/admin/dashboard-stats')
       ]);
@@ -359,7 +363,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const getCertificateStatusBadge = (status?: string) => {
+  const getCertificateStatusBadge = (status?: string, cert?: Certificate) => {
     // Handle undefined, null, or empty status for certificates
     if (!status) {
       return <Badge bg="secondary">UNKNOWN</Badge>;
@@ -373,7 +377,26 @@ const AdminDashboard: React.FC = () => {
     };
     
     const statusLower = status.toLowerCase();
-    return <Badge bg={variants[statusLower] || 'secondary'}>{status.toUpperCase()}</Badge>;
+    const color = variants[statusLower] || 'secondary';
+    
+    if (status.toLowerCase() === 'revoked' && cert?.revoked_by) {
+      return (
+        <div>
+          <Badge bg={color}>{status.toUpperCase()}</Badge>
+          <div className="small text-muted mt-1">
+            <strong>Revoked by:</strong> {cert.revoked_by}
+            {cert.revocation_reason && (
+              <div><strong>Reason:</strong> {cert.revocation_reason}</div>
+            )}
+            {cert.revoked_at && (
+              <div><strong>Date:</strong> {formatDate(cert.revoked_at)}</div>
+            )}
+          </div>
+        </div>
+      );
+    }
+    
+    return <Badge bg={color}>{status.toUpperCase()}</Badge>;
   };
 
   const handleViewParticipants = async (event: Event) => {
@@ -398,6 +421,55 @@ const AdminDashboard: React.FC = () => {
       setSuccess('Participant removed successfully');
     } catch (err: any) {
       setError('Failed to remove participant');
+    }
+  };
+
+  const handleDownloadCertificate = async (certificateId: string) => {
+    try {
+      const response = await api.get(`/certificates/${certificateId}/download`, {
+        responseType: 'blob'
+      });
+      
+      // Create blob link to download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `certificate_${certificateId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      setSuccess('Certificate downloaded successfully');
+    } catch (err: any) {
+      setError(`Failed to download certificate: ${err.response?.data?.detail || err.message}`);
+    }
+  };
+
+  const handleReissueCertificate = async (certificateId: string) => {
+    try {
+      if (window.confirm('Are you sure you want to re-issue this certificate? This will generate a new certificate with the same details.')) {
+        await api.post(`/certificates/${certificateId}/reissue`);
+        setSuccess('Certificate re-issued successfully');
+        fetchData(); // Refresh data
+      }
+    } catch (err: any) {
+      setError(`Failed to re-issue certificate: ${err.response?.data?.detail || err.message}`);
+    }
+  };
+
+  const handleRevokeCertificate = async (certificateId: string) => {
+    try {
+      const reason = prompt('Please provide a reason for revoking this certificate:');
+      if (reason && reason.trim()) {
+        const formData = new FormData();
+        formData.append('reason', reason.trim());
+        await api.post(`/certificates/${certificateId}/revoke`, formData);
+        setSuccess('Certificate revoked successfully');
+        fetchData(); // Refresh data
+      }
+    } catch (err: any) {
+      setError(`Failed to revoke certificate: ${err.response?.data?.detail || err.message}`);
     }
   };
 
@@ -648,7 +720,7 @@ const AdminDashboard: React.FC = () => {
                             <tr key={cert.id}>
                               <td>{cert.recipient_name}</td>
                               <td>{cert.event_name}</td>
-                              <td>{getCertificateStatusBadge(cert.status)}</td>
+                              <td>{getCertificateStatusBadge(cert.status, cert)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -751,6 +823,7 @@ const AdminDashboard: React.FC = () => {
                     <tr>
                       <th>Certificate ID</th>
                       <th>Recipient</th>
+                      <th>Participant ID</th>
                       <th>Event</th>
                       <th>Status</th>
                       <th>Issued Date</th>
@@ -762,13 +835,38 @@ const AdminDashboard: React.FC = () => {
                       <tr key={cert.id}>
                         <td><code>{cert.certificate_id}</code></td>
                         <td>{cert.recipient_name}</td>
+                        <td>{cert.participant_id || 'N/A'}</td>
                         <td>{cert.event_name}</td>
-                        <td>{getCertificateStatusBadge(cert.status)}</td>
+                        <td>{getCertificateStatusBadge(cert.status, cert)}</td>
                         <td>{formatDate(cert.issued_date)}</td>
                         <td>
-                          <Button size="sm" variant="outline-primary">
-                            Download
-                          </Button>
+                          <div className="btn-group" role="group">
+                            <Button 
+                              size="sm" 
+                              variant="outline-primary" 
+                              className="me-1"
+                              onClick={() => handleDownloadCertificate(cert.certificate_id)}
+                            >
+                              Download
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline-warning" 
+                              className="me-1"
+                              onClick={() => handleReissueCertificate(cert.certificate_id)}
+                              disabled={cert.status === 'revoked'}
+                            >
+                              Re-issue
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline-danger"
+                              onClick={() => handleRevokeCertificate(cert.certificate_id)}
+                              disabled={cert.status === 'revoked'}
+                            >
+                              Revoke
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}

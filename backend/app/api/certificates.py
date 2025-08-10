@@ -9,6 +9,7 @@ import pandas as pd
 from io import StringIO, BytesIO
 import random
 import string
+from datetime import datetime
 
 from app.core.database import get_db
 from app.core.auth import get_current_approved_user, require_admin, require_super_admin
@@ -577,14 +578,24 @@ async def get_admin_certificates(
         # Format the response
         result = []
         for cert in certificates:
+            # Get revocation details if certificate is revoked
+            revoked_by_name = None
+            if cert.status == CertificateStatus.REVOKED and cert.revoked_by:
+                revoker = db.query(UserModel).filter(UserModel.id == cert.revoked_by).first()
+                revoked_by_name = revoker.full_name if revoker else "Unknown"
+            
             result.append({
                 "id": cert.id,
                 "certificate_id": cert.certificate_id,
                 "recipient_name": cert.recipient_name,
+                "participant_id": cert.participant_id if cert.participant_id else "N/A",
                 "event_name": cert.event.name if cert.event else "Unknown Event",
                 "event_date": cert.event.date.isoformat() if cert.event and cert.event.date else "",
                 "status": cert.status.value if cert.status else "active",
-                "issued_date": cert.issued_at.isoformat() if cert.issued_at else ""
+                "issued_date": cert.issued_at.isoformat() if cert.issued_at else "",
+                "revoked_by": revoked_by_name,
+                "revocation_reason": cert.revocation_reason,
+                "revoked_at": cert.revoked_at.isoformat() if cert.revoked_at else None
             })
         
         return result
@@ -631,14 +642,15 @@ async def download_certificate(
             detail="Certificate not found"
         )
     
-    if not certificate.certificate_path or not os.path.exists(certificate.certificate_path):
+    # Use pdf_path field (not certificate_path)
+    if not certificate.pdf_path or not os.path.exists(certificate.pdf_path):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Certificate file not found"
         )
     
     return FileResponse(
-        certificate.certificate_path,
+        certificate.pdf_path,
         media_type="application/pdf",
         filename=f"certificate_{certificate_id}.pdf"
     )
@@ -707,30 +719,62 @@ async def validate_certificate(
             detail=f"Validation failed: {str(e)}"
         )
 
-@router.put("/{certificate_id}/revoke", response_model=Response)
+@router.post("/{certificate_id}/revoke", response_model=Response)
 async def revoke_certificate(
     certificate_id: str,
+    reason: str = Form(...),
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_admin)
 ):
     """Revoke a certificate (Admin only)"""
-    certificate = db.query(CertificateModel).filter(
-        CertificateModel.certificate_id == certificate_id
-    ).first()
-    
-    if not certificate:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Certificate not found"
+    try:
+        certificate = db.query(CertificateModel).filter(
+            CertificateModel.certificate_id == certificate_id
+        ).first()
+        
+        if not certificate:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Certificate not found"
+            )
+        
+        # Check if certificate is already revoked
+        if certificate.status == CertificateStatus.REVOKED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Certificate is already revoked"
+            )
+        
+        # Update certificate status and revocation details
+        certificate.status = CertificateStatus.REVOKED
+        certificate.revoked_by = current_user.id
+        certificate.revocation_reason = reason
+        certificate.revoked_at = datetime.utcnow()
+        
+        db.commit()
+        
+        # Send notification
+        notification_service = NotificationService(db)
+        await notification_service.send_notification(
+            user_id=current_user.id,
+            title="Certificate Revoked",
+            message=f"Certificate for {certificate.recipient_name} has been revoked",
+            notification_type="certificate_revoked"
         )
-    
-    certificate.status = CertificateStatus.REVOKED
-    db.commit()
-    
-    return Response(
-        success=True,
-        message="Certificate revoked successfully"
-    )
+        
+        return Response(
+            success=True,
+            message="Certificate revoked successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to revoke certificate: {str(e)}"
+        )
 
 @router.delete("/{certificate_id}", response_model=Response)
 async def delete_certificate(
@@ -763,6 +807,98 @@ async def delete_certificate(
         success=True,
         message="Certificate deleted successfully"
     )
+
+@router.post("/{certificate_id}/reissue", response_model=Response)
+async def reissue_certificate(
+    certificate_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_admin)
+):
+    """Re-issue a certificate (Admin only)"""
+    try:
+        # Find the certificate
+        certificate = db.query(CertificateModel).filter(
+            CertificateModel.certificate_id == certificate_id
+        ).first()
+        
+        if not certificate:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Certificate not found"
+            )
+        
+        # Check if admin owns the event
+        if certificate.event.admin_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only re-issue certificates for your events"
+            )
+        
+        # Create a new certificate with the same details but new ID
+        new_certificate_id = generate_certificate_id()
+        
+        # Prepare certificate generation data
+        cert_gen_data = {
+            'recipient_name': certificate.recipient_name,
+            'participant_id': certificate.participant_id or generate_participant_id(),
+            'event_name': certificate.event.name,
+            'event_date': certificate.event.date.strftime('%Y-%m-%d'),
+            'event_id': certificate.event.id,
+            'template_path': certificate.event.template_path
+        }
+        
+        # Generate new certificate files
+        generated_cert = certificate_generator.generate_single_certificate(cert_gen_data)
+        
+        if not generated_cert:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Certificate generation failed"
+            )
+        
+        # Update the certificate record with new details
+        certificate.certificate_id = generated_cert['certificate_id']
+        certificate.pdf_path = generated_cert['pdf_path']
+        certificate.qr_code_path = generated_cert['qr_code_path']
+        certificate.qr_code_data = generated_cert.get('qr_code_data')
+        certificate.blockchain_tx_hash = generated_cert.get('blockchain_tx')
+        certificate.sha256_hash = generated_cert.get('hash')
+        certificate.status = CertificateStatus.ACTIVE
+        certificate.issued_at = datetime.utcnow()
+        
+        # Clear revocation details since it's being re-issued
+        certificate.revoked_by = None
+        certificate.revocation_reason = None
+        certificate.revoked_at = None
+        
+        db.commit()
+        
+        # Send notification
+        notification_service = NotificationService(db)
+        await notification_service.send_notification(
+            user_id=current_user.id,
+            title="Certificate Re-issued",
+            message=f"Certificate for {certificate.recipient_name} has been re-issued",
+            notification_type="certificate_reissued"
+        )
+        
+        return Response(
+            success=True,
+            message="Certificate re-issued successfully",
+            data={
+                "new_certificate_id": certificate.certificate_id,
+                "download_url": f"/certificates/{certificate.certificate_id}/download"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to re-issue certificate: {str(e)}"
+        )
 
 @router.get("/{certificate_id}/tamper-check")
 async def check_certificate_tampering(

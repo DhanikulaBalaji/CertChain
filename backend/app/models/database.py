@@ -55,7 +55,7 @@ class User(Base):
     updated_at = Column(DateTime, onupdate=func.now())
     
     # Relationships
-    certificates = relationship("Certificate", back_populates="recipient")
+    certificates = relationship("Certificate", foreign_keys="Certificate.recipient_id", back_populates="recipient")
     admin_events = relationship("Event", foreign_keys="Event.admin_id", back_populates="admin")
 
 class Event(Base):
@@ -131,14 +131,19 @@ class Certificate(Base):
     status = Column(Enum(CertificateStatus), default=CertificateStatus.ACTIVE)
     is_verified = Column(Boolean, default=False)
     
+    # Revocation details
+    revoked_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Who revoked it
+    revocation_reason = Column(Text, nullable=True)  # Why it was revoked
+    
     # Timestamps
     issued_at = Column(DateTime, server_default=func.now())
     revoked_at = Column(DateTime)
     
     # Relationships
-    recipient = relationship("User", back_populates="certificates")
+    recipient = relationship("User", foreign_keys=[recipient_id], back_populates="certificates")
     event = relationship("Event", back_populates="certificates")
     validations = relationship("ValidationLog", back_populates="certificate")
+    revoker = relationship("User", foreign_keys=[revoked_by])  # Who revoked the certificate
 
 class ValidationLog(Base):
     __tablename__ = "validation_logs"
