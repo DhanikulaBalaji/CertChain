@@ -253,7 +253,7 @@ async def download_certificate(
         
         # Check if certificate file exists
         import os
-        pdf_path = certificate.certificate_path
+        pdf_path = certificate.pdf_path
         if not pdf_path or not os.path.exists(pdf_path):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -588,7 +588,7 @@ async def get_admin_certificates(
                 "id": cert.id,
                 "certificate_id": cert.certificate_id,
                 "recipient_name": cert.recipient_name,
-                "participant_id": cert.participant_id if cert.participant_id else "N/A",
+                "participant_id": cert.participant_id or cert.recipient_name or "Unknown",
                 "event_name": cert.event.name if cert.event else "Unknown Event",
                 "event_date": cert.event.date.isoformat() if cert.event and cert.event.date else "",
                 "status": cert.status.value if cert.status else "active",
@@ -690,7 +690,7 @@ async def validate_certificate(
         
         # Check for tampering
         tampering_result = await tamper_detection_service.check_certificate_integrity(
-            certificate.certificate_path,
+            certificate.pdf_path,
             certificate.blockchain_hash
         )
         
@@ -794,8 +794,8 @@ async def delete_certificate(
         )
     
     # Delete certificate files
-    if certificate.certificate_path and os.path.exists(certificate.certificate_path):
-        os.remove(certificate.certificate_path)
+    if certificate.pdf_path and os.path.exists(certificate.pdf_path):
+        os.remove(certificate.pdf_path)
     
     if certificate.qr_code_path and os.path.exists(certificate.qr_code_path):
         os.remove(certificate.qr_code_path)

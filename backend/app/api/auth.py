@@ -25,28 +25,36 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
             )
-        
-        # Create new user - always set as regular USER role
+
+        # Determine requested role
+        requested_role = user_data.role if user_data.role in [UserRole.ADMIN, UserRole.USER] else UserRole.USER
+
+        # Only allow direct approval for USER, require superadmin approval for ADMIN
+        is_approved = False
+        approval_message = "User registered successfully. Waiting for superadmin approval."
+        if requested_role == UserRole.USER:
+            approval_message = "User registered successfully. Waiting for admin approval."
+
         hashed_password = get_password_hash(user_data.password)
         new_user = UserModel(
             email=user_data.email,
             full_name=user_data.full_name,
             hashed_password=hashed_password,
-            role=UserRole.USER,  # Force USER role for public registration
+            role=requested_role,
             is_active=True,
-            is_approved=False  # Requires admin approval
+            is_approved=is_approved
         )
-        
+
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        
+
         return Response(
             success=True,
-            message="User registered successfully. Waiting for admin approval.",
-            data={"user_id": new_user.id}
+            message=approval_message,
+            data={"user_id": new_user.id, "requested_role": requested_role}
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:

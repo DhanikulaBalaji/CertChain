@@ -8,6 +8,7 @@ interface RegisterFormData {
   password: string;
   confirmPassword: string;
   full_name: string;
+  role: string;
 }
 
 const Register: React.FC = () => {
@@ -15,13 +16,14 @@ const Register: React.FC = () => {
     email: '',
     password: '',
     confirmPassword: '',
-    full_name: ''
+    full_name: '',
+    role: 'user'
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -56,7 +58,7 @@ const Register: React.FC = () => {
         email: formData.email,
         password: formData.password,
         full_name: formData.full_name,
-        role: "user"
+        role: formData.role
       };
 
       await api.post('/auth/register', registrationData);
@@ -88,8 +90,17 @@ const Register: React.FC = () => {
                   Your account has been created successfully!
                 </Alert>
                 <p className="text-muted mb-4">
-                  Your account is pending approval from a Super Administrator. 
-                  You will receive an email notification once your account is activated.
+                  {formData.role === 'admin' ? (
+                    <>
+                      Your admin role request is pending approval from a Super Administrator. 
+                      You will receive an email notification once your account is activated.
+                    </>
+                  ) : (
+                    <>
+                      Your account is pending approval from an Administrator. 
+                      You will receive an email notification once your account is activated.
+                    </>
+                  )}
                 </p>
                 <Link to="/login" className="btn btn-primary">
                   <i className="fas fa-sign-in-alt me-2"></i>
@@ -121,6 +132,7 @@ const Register: React.FC = () => {
               )}
               
               <Form onSubmit={handleSubmit}>
+
                 <Form.Group className="mb-3">
                   <Form.Label>
                     <i className="fas fa-user me-2"></i>Full Name
@@ -134,6 +146,22 @@ const Register: React.FC = () => {
                     required
                     disabled={loading}
                   />
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label>
+                    <i className="fas fa-user-tag me-2"></i>Role Type
+                  </Form.Label>
+                  <Form.Select
+                    name="role"
+                    value={formData.role}
+                    onChange={handleChange}
+                    disabled={loading}
+                    required
+                  >
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </Form.Select>
                 </Form.Group>
 
                 <Form.Group className="mb-3">

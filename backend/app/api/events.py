@@ -514,8 +514,10 @@ async def delete_event(
                 # Permanently delete certificates and their files
                 for cert in certificates:
                     # Delete certificate files if they exist
-                    if cert.certificate_path and os.path.exists(cert.certificate_path):
-                        os.remove(cert.certificate_path)
+                    if cert.pdf_path and os.path.exists(cert.pdf_path):
+                        os.remove(cert.pdf_path)
+                    if cert.qr_code_path and os.path.exists(cert.qr_code_path):
+                        os.remove(cert.qr_code_path)
                     # Delete from database
                     db.delete(cert)
                 certificates_action = f"{cert_count} certificates permanently deleted"
@@ -585,12 +587,19 @@ async def delete_event_permanent(
         deleted_files = 0
         for cert in certificates:
             # Delete certificate files if they exist
-            if cert.certificate_path and os.path.exists(cert.certificate_path):
+            if cert.pdf_path and os.path.exists(cert.pdf_path):
                 try:
-                    os.remove(cert.certificate_path)
+                    os.remove(cert.pdf_path)
                     deleted_files += 1
                 except Exception as e:
-                    print(f"Warning: Could not delete certificate file {cert.certificate_path}: {e}")
+                    print(f"Warning: Could not delete certificate file {cert.pdf_path}: {e}")
+            
+            if cert.qr_code_path and os.path.exists(cert.qr_code_path):
+                try:
+                    os.remove(cert.qr_code_path)
+                except Exception as e:
+                    print(f"Warning: Could not delete QR code file {cert.qr_code_path}: {e}")
+                    
             # Delete certificate from database
             db.delete(cert)
         

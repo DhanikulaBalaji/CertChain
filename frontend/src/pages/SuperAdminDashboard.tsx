@@ -573,7 +573,7 @@ const SuperAdminDashboard: React.FC = () => {
                   <h5 className="mb-0">🚨 Pending User Approvals</h5>
                 </Card.Header>
                 <Card.Body>
-                  {users.filter(u => !u.is_active).length === 0 ? (
+                  {users.filter(u => !u.is_approved).length === 0 ? (
                     <p className="text-muted">No pending user approvals</p>
                   ) : (
                     <div className="table-responsive">
@@ -582,14 +582,20 @@ const SuperAdminDashboard: React.FC = () => {
                           <tr>
                             <th>User</th>
                             <th>Email</th>
+                            <th>Requested Role</th>
                             <th>Action</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {users.filter(u => !u.is_active).slice(0, 5).map(user => (
+                          {users.filter(u => !u.is_approved).slice(0, 5).map(user => (
                             <tr key={user.id}>
                               <td>{user.full_name}</td>
                               <td>{user.email}</td>
+                              <td>
+                                <Badge bg={user.role === 'admin' ? 'primary' : 'secondary'}>
+                                  {user.role === 'admin' ? 'Admin' : 'User'}
+                                </Badge>
+                              </td>
                               <td>
                                 <Button
                                   size="sm"
