@@ -24,6 +24,17 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
   const [scanInterval, setScanInterval] = useState<NodeJS.Timeout | null>(null);
   const [scanCount, setScanCount] = useState(0);
   
+  // Vibration function for QR scan feedback
+  const triggerVibration = () => {
+    if ('vibrate' in navigator) {
+      // Vibrate for 200ms to signal successful QR scan
+      navigator.vibrate(200);
+      console.log('📳 Device vibration triggered');
+    } else {
+      console.log('📳 Vibration not supported on this device');
+    }
+  };
+  
   // Extract certificate ID from QR code data
   const extractCertificateId = (qrData: string): string | null => {
     try {
@@ -96,6 +107,10 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
     
     if (code) {
       console.log('🎯 QR Code detected! Raw data:', code.data);
+      
+      // Trigger vibration feedback for QR detection
+      triggerVibration();
+      
       const certificateId = extractCertificateId(code.data);
       if (certificateId) {
         console.log('✅ Certificate ID extracted:', certificateId);
@@ -213,9 +228,14 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
             const code = jsQR(imageData.data, imageData.width, imageData.height);
             
             if (code) {
+              console.log('🎯 QR Code found in uploaded image:', code.data);
+              
+              // Trigger vibration feedback for QR detection
+              triggerVibration();
+              
               const certificateId = extractCertificateId(code.data);
               if (certificateId) {
-                console.log('QR Code found in uploaded image:', certificateId);
+                console.log('✅ Certificate ID extracted from image:', certificateId);
                 onScan(certificateId);
               } else {
                 setError('QR code found but does not contain a valid certificate ID');
@@ -247,6 +267,10 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
     // Use a real certificate ID that exists in the database
     const testCertificateId = "CERT-0F2A92DFA52A"; // Alice Johnson's certificate
     console.log('Manual test scan triggered with certificate ID:', testCertificateId);
+    
+    // Trigger vibration feedback for test scan
+    triggerVibration();
+    
     onScan(testCertificateId);
     stopCamera();
   };
@@ -329,7 +353,11 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
                 </div>
                 <div className="mt-2">
                   <Spinner animation="border" size="sm" className="me-2" />
-                  <small className="text-muted">Position QR code within the frame - scanning automatically... (Scans: {scanCount})</small>
+                  <small className="text-muted">
+                    Position QR code within the frame - scanning automatically... (Scans: {scanCount})
+                    <br />
+                    📳 Device will vibrate when QR code is detected
+                  </small>
                 </div>
               </div>
             </div>
