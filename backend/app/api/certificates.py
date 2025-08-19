@@ -258,20 +258,53 @@ async def download_certificate(
                 detail="You don't have permission to access this certificate"
             )
         
-        # Check if certificate file exists
+        # Check if certificate file exists - try multiple paths and formats
         import os
-        pdf_path = certificate.pdf_path
-        if not pdf_path or not os.path.exists(pdf_path):
+        file_path = None
+        filename = None
+        media_type = None
+        
+        # Try PDF first (preferred format)
+        possible_pdf_paths = [
+            certificate.pdf_path,
+            f"./certificates/cert_{certificate_id}.pdf",
+            f"certificates/cert_{certificate_id}.pdf",
+            f"backend/certificates/cert_{certificate_id}.pdf"
+        ]
+        
+        for path in possible_pdf_paths:
+            if path and os.path.exists(path):
+                file_path = path
+                filename = f"certificate_{certificate_id}.pdf"
+                media_type = "application/pdf"
+                break
+        
+        # If PDF not found, try PNG as fallback
+        if not file_path:
+            possible_png_paths = [
+                f"./certificates/cert_{certificate_id}.png",
+                f"certificates/cert_{certificate_id}.png",
+                f"backend/certificates/cert_{certificate_id}.png"
+            ]
+            
+            for path in possible_png_paths:
+                if os.path.exists(path):
+                    file_path = path
+                    filename = f"certificate_{certificate_id}.png"
+                    media_type = "image/png"
+                    break
+        
+        if not file_path:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Certificate file not found on server"
+                detail=f"Certificate file not found for ID: {certificate_id}. Checked both PDF and PNG formats."
             )
         
         # Return the file
         return FileResponse(
-            path=pdf_path,
-            filename=f"certificate_{certificate_id}.pdf",
-            media_type="application/pdf"
+            path=file_path,
+            filename=filename,
+            media_type=media_type
         )
         
     except HTTPException:

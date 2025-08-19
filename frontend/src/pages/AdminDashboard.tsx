@@ -436,8 +436,12 @@ const AdminDashboard: React.FC = () => {
 
   const handleDownloadCertificate = async (certificateId: string) => {
     try {
-      const response = await api.get(`/certificates/${certificateId}/download`, {
-        responseType: 'blob'
+      setLoading(true);
+      setError('');
+      
+      const response = await api.get(`/certificates/download/${certificateId}`, {
+        responseType: 'blob',
+        timeout: 30000 // 30 second timeout for downloads
       });
       
       // Create blob link to download
@@ -452,7 +456,18 @@ const AdminDashboard: React.FC = () => {
       
       setSuccess('Certificate downloaded successfully');
     } catch (err: any) {
-      setError(`Failed to download certificate: ${err.response?.data?.detail || err.message}`);
+      console.error('Download error:', err);
+      if (err.code === 'ECONNABORTED') {
+        setError('Download timeout - please try again');
+      } else if (err.response?.status === 404) {
+        setError('Certificate file not found');
+      } else if (err.response?.status === 403) {
+        setError('You do not have permission to download this certificate');
+      } else {
+        setError('Failed to download certificate: ' + (err.response?.data?.detail || err.message || 'Unknown error'));
+      }
+    } finally {
+      setLoading(false);
     }
   };
 

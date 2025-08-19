@@ -1436,7 +1436,7 @@ const SuperAdminDashboard: React.FC = () => {
           {viewCertificate && (
             <Button 
               variant="primary" 
-              onClick={() => window.open(`/api/certificates/${viewCertificate.id}/download`, '_blank')}
+              onClick={() => window.open(`/api/v1/certificates/download/${viewCertificate.certificate_id}`, '_blank')}
             >
               📥 Download Certificate
             </Button>

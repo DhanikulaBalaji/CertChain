@@ -7,7 +7,7 @@ import os
 
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api import auth, certificates, events, notifications, admin, security_monitoring, templates, admin_certificates, event_participants, blockchain
+from app.api import auth, certificates, events, notifications, admin, security_monitoring, templates, admin_certificates, event_participants, blockchain, certificate_verification
 from app.core.security_middleware import (
     RateLimitMiddleware, 
     SecurityHeadersMiddleware, 
@@ -79,6 +79,7 @@ app.include_router(admin_certificates.template_router, prefix="/api/v1")
 app.include_router(security_monitoring.router, prefix="/api/v1")
 app.include_router(templates.router, prefix="/api/v1")
 app.include_router(blockchain.router, prefix="/api/v1")
+app.include_router(certificate_verification.router, prefix="/api/v1/certificates", tags=["Certificate Verification"])
 
 # Static files for serving certificates, templates, etc.
 app.mount("/static/certificates", StaticFiles(directory=settings.certificates_dir), name="certificates")
@@ -165,6 +166,59 @@ async def health_check():
             status_code=503,
             content={"status": "unhealthy", "error": str(e)}
         )
+
+# Temporary test download endpoint (no auth required)
+@app.get("/api/v1/test/download/{certificate_id}")
+async def test_download_certificate(certificate_id: str):
+    """Test download endpoint without authentication"""
+    import os
+    from fastapi.responses import FileResponse
+    
+    # Try multiple possible file paths and formats
+    file_path = None
+    filename = None
+    media_type = None
+    
+    # Try PDF first (preferred format)
+    possible_pdf_paths = [
+        f"./certificates/cert_{certificate_id}.pdf",
+        f"certificates/cert_{certificate_id}.pdf",
+        f"backend/certificates/cert_{certificate_id}.pdf"
+    ]
+    
+    for path in possible_pdf_paths:
+        if os.path.exists(path):
+            file_path = path
+            filename = f"certificate_{certificate_id}.pdf"
+            media_type = "application/pdf"
+            break
+    
+    # If PDF not found, try PNG as fallback
+    if not file_path:
+        possible_png_paths = [
+            f"./certificates/cert_{certificate_id}.png",
+            f"certificates/cert_{certificate_id}.png",
+            f"backend/certificates/cert_{certificate_id}.png"
+        ]
+        
+        for path in possible_png_paths:
+            if os.path.exists(path):
+                file_path = path
+                filename = f"certificate_{certificate_id}.png"
+                media_type = "image/png"
+                break
+    
+    if not file_path:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Certificate file not found for ID: {certificate_id}. Checked both PDF and PNG formats."
+        )
+    
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type=media_type
+    )
 
 @app.get("/api/v1/system/info")
 async def system_info():

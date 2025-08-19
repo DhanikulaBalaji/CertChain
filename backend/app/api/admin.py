@@ -1020,3 +1020,36 @@ async def get_tamper_logs(
                 "severity": "MEDIUM"
             }
         ]
+
+@router.post("/fraud-alert")
+async def create_fraud_alert(
+    alert_data: dict,
+    current_user: UserModel = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Create fraud alert notification for SuperAdmin"""
+    try:
+        from app.models.database import ActivityLog
+        
+        # Log fraud detection
+        activity_log = ActivityLog(
+            user_id=current_user.id,
+            action="fraud_alert_created",
+            details=f"Fraud detected for certificate {alert_data.get('certificate_id')}: {', '.join(alert_data.get('fraud_indicators', []))}",
+            timestamp=datetime.utcnow()
+        )
+        db.add(activity_log)
+        db.commit()
+        
+        # In a production system, you would also:
+        # 1. Send email notification to SuperAdmin
+        # 2. Create notification record in database
+        # 3. Possibly suspend the certificate automatically
+        
+        return {"message": "Fraud alert created successfully", "alert_id": activity_log.id}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create fraud alert: {str(e)}"
+        )

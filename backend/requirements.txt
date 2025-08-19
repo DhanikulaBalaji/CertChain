@@ -21,6 +21,7 @@ eth-account==0.10.0
 # PDF Generation
 reportlab==4.0.7
 weasyprint==61.2
+PyPDF2==3.0.1
 
 # QR Code Generation
 qrcode[pil]==7.4.2

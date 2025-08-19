@@ -8,14 +8,10 @@ interface CertificateVerification {
   certificate_id: string;
   recipient_name: string;
   event_name: string;
-  event_id: string;
-  event_creator?: string;
-  event_date?: string;
   issued_date: string;
-  issued_at: string;
   status: string;
-  is_verified?: boolean;
-  sha256_hash?: string;
+  is_verified: boolean;
+  sha256_hash: string;
   blockchain_tx_hash?: string;
   metadata_match?: boolean;
   verification_score: number;
@@ -62,7 +58,7 @@ const UserDashboard: React.FC = () => {
     setSuccess('');
 
     try {
-      const response = await api.post('/certificates/verify-public', {
+      const response = await api.post('/certificates/verify-comprehensive', {
         certificate_id: certificateId.trim(),
         verification_type: 'id_lookup'
       });
@@ -109,7 +105,7 @@ const UserDashboard: React.FC = () => {
   const verifyQRData = async (qrData: any) => {
     setLoading(true);
     try {
-      const response = await api.post('/certificates/verify-public', {
+      const response = await api.post('/certificates/verify-comprehensive', {
         certificate_id: qrData.certificate_id,
         qr_metadata: qrData,
         verification_type: 'qr_scan'
@@ -132,7 +128,7 @@ const UserDashboard: React.FC = () => {
   const verifyCertificateById = async (id: string) => {
     setLoading(true);
     try {
-      const response = await api.post('/certificates/verify-public', {
+      const response = await api.post('/certificates/verify-comprehensive', {
         certificate_id: id,
         verification_type: 'qr_id_fallback'
       });
@@ -173,7 +169,7 @@ const UserDashboard: React.FC = () => {
     formData.append('verification_type', 'file_upload');
 
     try {
-      const response = await api.post('/certificates/verify-file-public', formData, {
+      const response = await api.post('/certificates/verify-file', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -193,13 +189,8 @@ const UserDashboard: React.FC = () => {
   // Download certificate
   const handleDownloadCertificate = async (certificateId: string) => {
     try {
-      setLoading(true);
-      setError('');
-      
-      // Use the existing certificates API endpoint with proper path
-      const response = await api.get(`/certificates/download/${certificateId}`, {
-        responseType: 'blob',
-        timeout: 30000 // 30 second timeout for downloads
+      const response = await api.get(`/certificates/${certificateId}/download`, {
+        responseType: 'blob'
       });
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -213,18 +204,7 @@ const UserDashboard: React.FC = () => {
 
       setSuccess('Certificate downloaded successfully');
     } catch (err: any) {
-      console.error('Download error:', err);
-      if (err.code === 'ECONNABORTED') {
-        setError('Download timeout - please try again');
-      } else if (err.response?.status === 404) {
-        setError('Certificate file not found');
-      } else if (err.response?.status === 403) {
-        setError('You do not have permission to download this certificate');
-      } else {
-        setError('Failed to download certificate: ' + (err.response?.data?.detail || err.message || 'Unknown error'));
-      }
-    } finally {
-      setLoading(false);
+      setError('Failed to download certificate');
     }
   };
 
@@ -448,12 +428,6 @@ const UserDashboard: React.FC = () => {
                               <td><strong>Issued Date:</strong></td>
                               <td>{new Date(verificationResult.certificate.issued_date).toLocaleDateString()}</td>
                             </tr>
-                            {verificationResult.certificate.event_creator && (
-                              <tr>
-                                <td><strong>Issued By:</strong></td>
-                                <td>{verificationResult.certificate.event_creator}</td>
-                              </tr>
-                            )}
                             <tr>
                               <td><strong>Status:</strong></td>
                               <td>
