@@ -22,6 +22,7 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [scanMode, setScanMode] = useState<'camera' | 'upload'>('camera');
   const [scanInterval, setScanInterval] = useState<NodeJS.Timeout | null>(null);
+  const [scanCount, setScanCount] = useState(0);
   
   // Extract certificate ID from QR code data
   const extractCertificateId = (qrData: string): string | null => {
@@ -57,30 +58,52 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
   
   // Scan QR code from camera
   const scanQRFromCamera = () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current) {
+      return;
+    }
     
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
     
-    if (!context || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+    if (!context) {
+      return;
+    }
     
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+      return;
+    }
+    
+    // Update scan count for debugging
+    setScanCount(prev => prev + 1);
+    
+    // Set canvas size to match video
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
+    
+    if (canvas.width === 0 || canvas.height === 0) {
+      return;
+    }
+    
+    // Draw video frame to canvas
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     
+    // Get image data for QR scanning
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    
+    // Scan for QR code
     const code = jsQR(imageData.data, imageData.width, imageData.height);
     
     if (code) {
+      console.log('🎯 QR Code detected! Raw data:', code.data);
       const certificateId = extractCertificateId(code.data);
       if (certificateId) {
-        console.log('QR Code detected:', certificateId);
+        console.log('✅ Certificate ID extracted:', certificateId);
         onScan(certificateId);
         stopCamera();
       } else {
-        console.log('QR Code detected but no certificate ID found:', code.data);
-        setError('QR code does not contain a valid certificate ID');
+        console.log('❌ QR Code found but no valid certificate ID:', code.data);
+        setError('QR code does not contain a valid certificate ID: ' + code.data);
       }
     }
   };
@@ -103,11 +126,30 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
       
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        videoRef.current.play();
         
-        // Start scanning for QR codes
-        const interval = setInterval(scanQRFromCamera, 100); // Scan every 100ms
-        setScanInterval(interval);
+        // Add event listeners for proper video loading
+        videoRef.current.onloadedmetadata = () => {
+          console.log('📹 Video metadata loaded');
+        };
+        
+        videoRef.current.oncanplay = () => {
+          console.log('📹 Video can start playing');
+          if (videoRef.current) {
+            videoRef.current.play().then(() => {
+              console.log('▶️ Video started playing, beginning QR scan');
+              setScanCount(0);
+              // Start scanning for QR codes after video starts
+              const interval = setInterval(scanQRFromCamera, 200); // Scan every 200ms
+              setScanInterval(interval);
+            }).catch(error => {
+              console.error('❌ Error playing video:', error);
+              setError('Failed to start video playback');
+            });
+          }
+        };
+        
+        // Start loading the video
+        videoRef.current.load();
       }
       
     } catch (err) {
@@ -138,6 +180,7 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
         setScanInterval(null);
       }
       
+      setScanCount(0);
       setIsScanning(false);
     } catch (error) {
       console.log('Error stopping camera:', error);
@@ -286,7 +329,7 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
                 </div>
                 <div className="mt-2">
                   <Spinner animation="border" size="sm" className="me-2" />
-                  <small className="text-muted">Position QR code within the frame - scanning automatically...</small>
+                  <small className="text-muted">Position QR code within the frame - scanning automatically... (Scans: {scanCount})</small>
                 </div>
               </div>
             </div>
