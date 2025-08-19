@@ -1,7 +1,7 @@
 // Utility function to safely format dates
 export const formatDate = (dateString: string | null | undefined): string => {
   if (!dateString) {
-    return 'N/A';
+    return 'Not available';
   }
   
   try {
@@ -18,7 +18,7 @@ export const formatDate = (dateString: string | null | undefined): string => {
 // Utility function to format datetime
 export const formatDateTime = (dateString: string | null | undefined): string => {
   if (!dateString) {
-    return 'N/A';
+    return 'Not available';
   }
   
   try {

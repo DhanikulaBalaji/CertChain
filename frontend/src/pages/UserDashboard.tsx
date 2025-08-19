@@ -10,10 +10,16 @@ interface Certificate {
   id: number;
   certificate_id: string;
   recipient_name: string;
+  recipient_email?: string;
+  participant_id?: string;
   event_name: string;
+  event_description?: string;
   status: string;
   issued_date: string;
   event_date: string;
+  sha256_hash?: string;
+  is_verified: boolean;
+  blockchain_tx_hash?: string;
 }
 
 interface Event {
@@ -58,6 +64,12 @@ const UserDashboard: React.FC = () => {
   const [tamperCheckId, setTamperCheckId] = useState('');
   const [tamperResult, setTamperResult] = useState<any>(null);
   const [tamperChecking, setTamperChecking] = useState(false);
+
+  // Certificate view modal
+  const [showViewCertModal, setShowViewCertModal] = useState(false);
+  const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null);
+  const [certificateDetails, setCertificateDetails] = useState<any>(null);
+  const [certificateLoading, setCertificateLoading] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -268,6 +280,26 @@ const UserDashboard: React.FC = () => {
       setError(handleApiError(err));
     } finally {
       setRegistrationLoading(prev => ({ ...prev, [eventId]: false }));
+    }
+  };
+
+  const handleViewCertificate = async (certificate: Certificate) => {
+    try {
+      setCertificateLoading(true);
+      setSelectedCertificate(certificate);
+      
+      // Fetch detailed certificate information
+      const response = await api.get(`/certificates/${certificate.certificate_id}/details`);
+      setCertificateDetails(response.data);
+      setShowViewCertModal(true);
+    } catch (err: any) {
+      // If detailed API doesn't exist, show the certificate data we already have
+      console.log('Detailed certificate API not available, using existing data');
+      setSelectedCertificate(certificate);
+      setCertificateDetails(certificate);
+      setShowViewCertModal(true);
+    } finally {
+      setCertificateLoading(false);
     }
   };
 
@@ -533,29 +565,97 @@ const UserDashboard: React.FC = () => {
                         <thead>
                           <tr>
                             <th>Certificate ID</th>
-                            <th>Event</th>
+                            <th>Event Details</th>
+                            <th>Participant Info</th>
                             <th>Status</th>
-                            <th>Issued Date</th>
                             <th>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
                           {certificates.slice(0, 5).map(cert => (
                             <tr key={cert.id}>
-                              <td><code>{cert.certificate_id}</code></td>
                               <td>
-                                <strong>{cert.event_name}</strong><br />
+                                <code className="text-primary">{cert.certificate_id}</code>
+                                <br />
                                 <small className="text-muted">
-                                  {new Date(cert.event_date).toLocaleDateString()}
+                                  <i className="fas fa-calendar me-1"></i>
+                                  Issued: {formatDate(cert.issued_date)}
                                 </small>
                               </td>
-                              <td>{getStatusBadge(cert.status)}</td>
-                              <td>{formatDate(cert.issued_date)}</td>
                               <td>
-                                <Button size="sm" variant="outline-primary">
-                                  <i className="fas fa-download me-1"></i>
-                                  Download
-                                </Button>
+                                <div>
+                                  <strong>{cert.event_name}</strong>
+                                  {cert.event_description && (
+                                    <div className="small text-muted mt-1">
+                                      {cert.event_description.length > 50 
+                                        ? cert.event_description.substring(0, 50) + '...'
+                                        : cert.event_description
+                                      }
+                                    </div>
+                                  )}
+                                  <small className="text-info">
+                                    <i className="fas fa-calendar-alt me-1"></i>
+                                    Event: {new Date(cert.event_date).toLocaleDateString()}
+                                  </small>
+                                </div>
+                              </td>
+                              <td>
+                                <div>
+                                  <div className="fw-bold">{cert.recipient_name}</div>
+                                  {cert.participant_id && (
+                                    <small className="text-muted">
+                                      <i className="fas fa-id-card me-1"></i>
+                                      ID: {cert.participant_id}
+                                    </small>
+                                  )}
+                                  {cert.recipient_email && cert.recipient_email !== "Not provided" && (
+                                    <div className="small text-muted">
+                                      <i className="fas fa-envelope me-1"></i>
+                                      {cert.recipient_email}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                              <td>
+                                <div>
+                                  {getStatusBadge(cert.status)}
+                                  {cert.is_verified && (
+                                    <div className="mt-1">
+                                      <Badge bg="success" className="small">
+                                        <i className="fas fa-shield-alt me-1"></i>
+                                        Verified
+                                      </Badge>
+                                    </div>
+                                  )}
+                                  {cert.blockchain_tx_hash && cert.blockchain_tx_hash !== "Pending blockchain verification" && (
+                                    <div className="mt-1">
+                                      <Badge bg="info" className="small">
+                                        <i className="fas fa-link me-1"></i>
+                                        On Blockchain
+                                      </Badge>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                              <td>
+                                <div className="d-flex flex-column gap-1">
+                                  <Button size="sm" variant="outline-primary">
+                                    <i className="fas fa-download me-1"></i>
+                                    Download
+                                  </Button>
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline-info"
+                                    onClick={() => {
+                                      // Show certificate details modal
+                                      setSelectedCertificate(cert);
+                                      setShowViewCertModal(true);
+                                    }}
+                                  >
+                                    <i className="fas fa-eye me-1"></i>
+                                    View Details
+                                  </Button>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -630,8 +730,9 @@ const UserDashboard: React.FC = () => {
                     <thead>
                       <tr>
                         <th>Certificate ID</th>
-                        <th>Event Name</th>
-                        <th>Event Date</th>
+                        <th>Participant ID</th>
+                        <th>Recipient Details</th>
+                        <th>Event</th>
                         <th>Status</th>
                         <th>Issued Date</th>
                         <th>Actions</th>
@@ -644,13 +745,36 @@ const UserDashboard: React.FC = () => {
                             <code className="text-primary">{cert.certificate_id}</code>
                           </td>
                           <td>
-                            <strong>{cert.event_name}</strong>
+                            <span className="badge bg-secondary">{cert.participant_id || `PART-${cert.id.toString().padStart(4, '0')}`}</span>
                           </td>
-                          <td>{new Date(cert.event_date).toLocaleDateString()}</td>
+                          <td>
+                            <div>
+                              <strong>{cert.recipient_name}</strong><br/>
+                              <small className="text-muted">{cert.recipient_email || user?.email}</small>
+                            </div>
+                          </td>
+                          <td>
+                            <div>
+                              <strong>{cert.event_name}</strong><br/>
+                              <small className="text-muted">Date: {new Date(cert.event_date).toLocaleDateString()}</small>
+                            </div>
+                          </td>
                           <td>{getStatusBadge(cert.status)}</td>
-                          <td>{formatDate(cert.issued_date)}</td>
+                          <td>
+                            <span title={new Date(cert.issued_date).toLocaleString()}>
+                              {formatDate(cert.issued_date)}
+                            </span>
+                          </td>
                           <td>
                             <div className="btn-group">
+                              <Button 
+                                size="sm" 
+                                variant="outline-info"
+                                onClick={() => handleViewCertificate(cert)}
+                              >
+                                <i className="fas fa-eye me-1"></i>
+                                View
+                              </Button>
                               <Button size="sm" variant="primary">
                                 <i className="fas fa-download me-1"></i>
                                 Download PDF
@@ -719,8 +843,9 @@ const UserDashboard: React.FC = () => {
                         <th>Event Name</th>
                         <th>Description</th>
                         <th>Event Date</th>
-                        <th>Admin</th>
-                        <th>Approved</th>
+                        <th>Created By</th>
+                        <th>Created At</th>
+                        <th>Status</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -728,13 +853,30 @@ const UserDashboard: React.FC = () => {
                       {approvedEvents.map(event => (
                         <tr key={event.id}>
                           <td><strong>{event.name}</strong></td>
-                          <td>{event.description}</td>
-                          <td>{new Date(event.date).toLocaleDateString()}</td>
-                          <td>{event.admin_name}</td>
+                          <td>
+                            <span title={event.description}>
+                              {event.description.length > 50 
+                                ? `${event.description.substring(0, 50)}...` 
+                                : event.description}
+                            </span>
+                          </td>
+                          <td>
+                            <span title={new Date(event.date).toLocaleString()}>
+                              {new Date(event.date).toLocaleDateString()}
+                            </span>
+                          </td>
+                          <td>
+                            <strong>{event.admin_name}</strong>
+                          </td>
+                          <td>
+                            <span title={new Date(event.created_at).toLocaleString()}>
+                              {new Date(event.created_at).toLocaleDateString()}
+                            </span>
+                          </td>
                           <td>
                             <Badge bg="success">
                               <i className="fas fa-check me-1"></i>
-                              Approved on {new Date(event.approved_at).toLocaleDateString()}
+                              Approved
                             </Badge>
                           </td>
                           <td>
@@ -1118,6 +1260,242 @@ const UserDashboard: React.FC = () => {
           </Card>
         </Tab>
       </Tabs>
+
+      {/* Certificate View Modal */}
+      <Modal show={showViewCertModal} onHide={() => setShowViewCertModal(false)} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <i className="fas fa-certificate me-2"></i>
+            Certificate Details
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {certificateLoading ? (
+            <div className="text-center p-4">
+              <div className="spinner-border text-primary" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </div>
+              <p className="mt-2">Loading certificate details...</p>
+            </div>
+          ) : selectedCertificate ? (
+            <div>
+              <Row>
+                <Col md={6}>
+                  <Card className="mb-3">
+                    <Card.Header>
+                      <h6 className="mb-0">
+                        <i className="fas fa-id-card me-2"></i>
+                        Certificate Information
+                      </h6>
+                    </Card.Header>
+                    <Card.Body>
+                      <div className="mb-2">
+                        <strong>Certificate ID:</strong>
+                        <br />
+                        <code className="text-primary">{selectedCertificate.certificate_id}</code>
+                      </div>
+                      <div className="mb-2">
+                        <strong>Recipient Name:</strong>
+                        <br />
+                        {selectedCertificate.recipient_name}
+                      </div>
+                      {selectedCertificate.recipient_email && selectedCertificate.recipient_email !== "Not provided" && (
+                        <div className="mb-2">
+                          <strong>Email:</strong>
+                          <br />
+                          <i className="fas fa-envelope me-1 text-muted"></i>
+                          {selectedCertificate.recipient_email}
+                        </div>
+                      )}
+                      {selectedCertificate.participant_id && (
+                        <div className="mb-2">
+                          <strong>Participant ID:</strong>
+                          <br />
+                          <i className="fas fa-id-card me-1 text-muted"></i>
+                          <code>{selectedCertificate.participant_id}</code>
+                        </div>
+                      )}
+                      <div className="mb-2">
+                        <strong>Status:</strong>
+                        <br />
+                        <div className="d-flex align-items-center gap-2">
+                          {getStatusBadge(selectedCertificate.status)}
+                          {selectedCertificate.is_verified && (
+                            <Badge bg="success">
+                              <i className="fas fa-shield-alt me-1"></i>
+                              Verified
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                <Col md={6}>
+                  <Card className="mb-3">
+                    <Card.Header>
+                      <h6 className="mb-0">
+                        <i className="fas fa-calendar me-2"></i>
+                        Event Information
+                      </h6>
+                    </Card.Header>
+                    <Card.Body>
+                      <div className="mb-2">
+                        <strong>Event Name:</strong>
+                        <br />
+                        <i className="fas fa-calendar-alt me-1 text-primary"></i>
+                        {selectedCertificate.event_name}
+                      </div>
+                      {selectedCertificate.event_description && (
+                        <div className="mb-2">
+                          <strong>Event Description:</strong>
+                          <br />
+                          <div className="text-muted small bg-light p-2 rounded">
+                            {selectedCertificate.event_description}
+                          </div>
+                        </div>
+                      )}
+                      <div className="mb-2">
+                        <strong>Event Date:</strong>
+                        <br />
+                        <i className="fas fa-calendar me-1 text-info"></i>
+                        {formatDate(selectedCertificate.event_date)}
+                      </div>
+                      <div className="mb-2">
+                        <strong>Issued Date:</strong>
+                        <br />
+                        <i className="fas fa-clock me-1 text-success"></i>
+                        {formatDate(selectedCertificate.issued_date)}
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              </Row>
+
+              {/* Security and Blockchain Information */}
+              <Row>
+                <Col md={12}>
+                  <Card className="mb-3">
+                    <Card.Header>
+                      <h6 className="mb-0">
+                        <i className="fas fa-shield-alt me-2"></i>
+                        Security & Blockchain Information
+                      </h6>
+                    </Card.Header>
+                    <Card.Body>
+                      <Row>
+                        <Col md={6}>
+                          <div className="mb-2">
+                            <strong>Digital Hash:</strong>
+                            <br />
+                            <code className="small text-info d-block">
+                              {selectedCertificate.sha256_hash || "Not available"}
+                            </code>
+                            <small className="text-muted">
+                              Used for tamper detection
+                            </small>
+                          </div>
+                        </Col>
+                        <Col md={6}>
+                          <div className="mb-2">
+                            <strong>Blockchain Status:</strong>
+                            <br />
+                            {selectedCertificate.blockchain_tx_hash && 
+                             selectedCertificate.blockchain_tx_hash !== "Pending blockchain verification" ? (
+                              <div>
+                                <Badge bg="success" className="mb-1">
+                                  <i className="fas fa-link me-1"></i>
+                                  On Blockchain
+                                </Badge>
+                                <code className="small text-success d-block">
+                                  {selectedCertificate.blockchain_tx_hash.length > 20 
+                                    ? selectedCertificate.blockchain_tx_hash.substring(0, 20) + "..."
+                                    : selectedCertificate.blockchain_tx_hash
+                                  }
+                                </code>
+                              </div>
+                            ) : (
+                              <Badge bg="warning">
+                                <i className="fas fa-clock me-1"></i>
+                                {selectedCertificate.blockchain_tx_hash || "Pending verification"}
+                              </Badge>
+                            )}
+                          </div>
+                        </Col>
+                      </Row>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              </Row>
+              
+              {/* Additional certificate details if available */}
+              {certificateDetails && certificateDetails !== selectedCertificate && (
+                <Card>
+                  <Card.Header>
+                    <h6 className="mb-0">
+                      <i className="fas fa-info-circle me-2"></i>
+                      Additional Details
+                    </h6>
+                  </Card.Header>
+                  <Card.Body>
+                    <pre className="bg-light p-2 rounded">
+                      {JSON.stringify(certificateDetails, null, 2)}
+                    </pre>
+                  </Card.Body>
+                </Card>
+              )}
+            </div>
+          ) : (
+            <div className="text-center p-4">
+              <p className="text-muted">No certificate selected</p>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <div className="w-100 d-flex justify-content-between">
+            <div>
+              {selectedCertificate && (
+                <>
+                  <Button
+                    variant="primary"
+                    className="me-2"
+                  >
+                    <i className="fas fa-download me-1"></i>
+                    Download PDF
+                  </Button>
+                  <Button
+                    variant="outline-success"
+                    className="me-2"
+                    onClick={() => {
+                      setValidateId(selectedCertificate.certificate_id);
+                      setShowViewCertModal(false);
+                      setActiveTab('validation');
+                    }}
+                  >
+                    <i className="fas fa-check-circle me-1"></i>
+                    Validate
+                  </Button>
+                  <Button
+                    variant="outline-warning"
+                    className="me-2"
+                    onClick={() => {
+                      setTamperCheckId(selectedCertificate.certificate_id);
+                      setShowViewCertModal(false);
+                      setActiveTab('tamper-detection');
+                    }}
+                  >
+                    <i className="fas fa-shield-alt me-1"></i>
+                    Check Tampering
+                  </Button>
+                </>
+              )}
+            </div>
+            <Button variant="secondary" onClick={() => setShowViewCertModal(false)}>
+              Close
+            </Button>
+          </div>
+        </Modal.Footer>
+      </Modal>
     </Container>
   );
 };

@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 import NotificationToast from './components/NotificationToast';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Profile from './pages/Profile';
 import MyCertificates from './pages/MyCertificates';
 import ForgotPassword from './pages/ForgotPassword';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
@@ -140,6 +141,12 @@ const AppContent: React.FC = () => {
           <Route path="/my-certificates" element={
             <ProtectedRoute allowedRoles={['user', 'admin', 'super_admin']}>
               <MyCertificates />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/profile" element={
+            <ProtectedRoute allowedRoles={['user', 'admin', 'super_admin']}>
+              <Profile />
             </ProtectedRoute>
           } />
 

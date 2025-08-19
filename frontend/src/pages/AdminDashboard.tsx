@@ -15,14 +15,18 @@ interface Event {
   status?: string;       // Keep status for compatibility
   template_path?: string;
   created_at: string;
+  admin_name?: string;   // Admin who created the event
+  admin_id?: number;     // Admin ID
 }
 
 interface Certificate {
   id: number;
   certificate_id: string;
   recipient_name: string;
+  recipient_email?: string;
   participant_id?: string;
   event_name: string;
+  event_id?: number;
   status?: string;  // Make status optional
   issued_date: string;
   revoked_by?: string;       // Who revoked the certificate
@@ -80,6 +84,12 @@ const AdminDashboard: React.FC = () => {
   // Event participants management
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const [selectedEventForParticipants, setSelectedEventForParticipants] = useState<Event | null>(null);
+
+  // Certificate view modal
+  const [showViewCertModal, setShowViewCertModal] = useState(false);
+  const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null);
+  const [certificateDetails, setCertificateDetails] = useState<any>(null);
+  const [certificateLoading, setCertificateLoading] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -448,13 +458,26 @@ const AdminDashboard: React.FC = () => {
 
   const handleReissueCertificate = async (certificateId: string) => {
     try {
-      if (window.confirm('Are you sure you want to re-issue this certificate? This will generate a new certificate with the same details.')) {
-        await api.post(`/certificates/${certificateId}/reissue`);
-        setSuccess('Certificate re-issued successfully');
-        fetchData(); // Refresh data
+      setError('');
+      setSuccess('');
+      
+      if (window.confirm('Are you sure you want to re-issue this certificate? This will generate a new certificate with the same details and a new certificate ID.')) {
+        console.log('Re-issuing certificate:', certificateId);
+        
+        const response = await api.post(`/certificates/${certificateId}/reissue`);
+        console.log('Re-issue response:', response.data);
+        
+        setSuccess('Certificate re-issued successfully! The certificate now has a new ID.');
+        
+        // Refresh the data to show the updated certificate
+        setTimeout(() => {
+          fetchData();
+        }, 1000);
       }
     } catch (err: any) {
-      setError(`Failed to re-issue certificate: ${err.response?.data?.detail || err.message}`);
+      console.error('Re-issue error:', err);
+      const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Unknown error occurred';
+      setError(`Failed to re-issue certificate: ${errorMessage}`);
     }
   };
 
@@ -470,6 +493,26 @@ const AdminDashboard: React.FC = () => {
       }
     } catch (err: any) {
       setError(`Failed to revoke certificate: ${err.response?.data?.detail || err.message}`);
+    }
+  };
+
+  const handleViewCertificate = async (certificate: Certificate) => {
+    try {
+      setCertificateLoading(true);
+      setSelectedCertificate(certificate);
+      
+      // Fetch detailed certificate information
+      const response = await api.get(`/certificates/${certificate.certificate_id}/details`);
+      setCertificateDetails(response.data);
+      setShowViewCertModal(true);
+    } catch (err: any) {
+      // If detailed API doesn't exist, show the certificate data we already have
+      console.log('Detailed certificate API not available, using existing data');
+      setSelectedCertificate(certificate);
+      setCertificateDetails(certificate);
+      setShowViewCertModal(true);
+    } finally {
+      setCertificateLoading(false);
     }
   };
 
@@ -748,9 +791,10 @@ const AdminDashboard: React.FC = () => {
                     <tr>
                       <th>Event Name</th>
                       <th>Description</th>
-                      <th>Date</th>
+                      <th>Event Date</th>
+                      <th>Created By</th>
+                      <th>Created At</th>
                       <th>Status</th>
-                      <th>Created</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -758,10 +802,27 @@ const AdminDashboard: React.FC = () => {
                     {events.map(event => (
                       <tr key={event.id}>
                         <td><strong>{event.name}</strong></td>
-                        <td>{event.description}</td>
-                        <td>{new Date(event.date).toLocaleDateString()}</td>
+                        <td>
+                          <span title={event.description}>
+                            {event.description.length > 40 
+                              ? `${event.description.substring(0, 40)}...` 
+                              : event.description}
+                          </span>
+                        </td>
+                        <td>
+                          <span title={new Date(event.date).toLocaleString()}>
+                            {new Date(event.date).toLocaleDateString()}
+                          </span>
+                        </td>
+                        <td>
+                          <strong>{event.admin_name || user?.full_name || 'Admin'}</strong>
+                        </td>
+                        <td>
+                          <span title={new Date(event.created_at).toLocaleString()}>
+                            {new Date(event.created_at).toLocaleDateString()}
+                          </span>
+                        </td>
                         <td>{getEventStatusBadge(event)}</td>
-                        <td>{new Date(event.created_at).toLocaleDateString()}</td>
                         <td>
                           <div className="d-flex gap-2">
                             {event.is_approved && (
@@ -822,8 +883,8 @@ const AdminDashboard: React.FC = () => {
                   <thead>
                     <tr>
                       <th>Certificate ID</th>
-                      <th>Recipient</th>
                       <th>Participant ID</th>
+                      <th>Recipient Details</th>
                       <th>Event</th>
                       <th>Status</th>
                       <th>Issued Date</th>
@@ -833,14 +894,34 @@ const AdminDashboard: React.FC = () => {
                   <tbody>
                     {certificates.map(cert => (
                       <tr key={cert.id}>
-                        <td><code>{cert.certificate_id}</code></td>
-                        <td>{cert.recipient_name}</td>
-                        <td>{cert.participant_id || 'N/A'}</td>
-                        <td>{cert.event_name}</td>
+                        <td><code className="text-primary">{cert.certificate_id}</code></td>
+                        <td>
+                          <span className="badge bg-secondary">
+                            {cert.participant_id || `PART-${cert.id.toString().padStart(4, '0')}`}
+                          </span>
+                        </td>
+                        <td>
+                          <div>
+                            <strong>{cert.recipient_name}</strong><br/>
+                            <small className="text-muted">Participant: {cert.participant_id || `PART-${cert.id.toString().padStart(4, '0')}`}</small>
+                          </div>
+                        </td>
+                        <td>
+                          <strong>{cert.event_name}</strong><br/>
+                          <small className="text-muted">Event Details</small>
+                        </td>
                         <td>{getCertificateStatusBadge(cert.status, cert)}</td>
                         <td>{formatDate(cert.issued_date)}</td>
                         <td>
                           <div className="btn-group" role="group">
+                            <Button 
+                              size="sm" 
+                              variant="outline-info" 
+                              className="me-1"
+                              onClick={() => handleViewCertificate(cert)}
+                            >
+                              View
+                            </Button>
                             <Button 
                               size="sm" 
                               variant="outline-primary" 
@@ -930,7 +1011,7 @@ const AdminDashboard: React.FC = () => {
                             <strong>Network:</strong> {blockchainStatus.data.network}
                           </Col>
                           <Col md={6}>
-                            <strong>Block Number:</strong> {blockchainStatus.data.latest_block || 'N/A'}
+                            <strong>Block Number:</strong> {blockchainStatus.data.latest_block || 'Not available'}
                           </Col>
                         </Row>
                       )}
@@ -1407,6 +1488,176 @@ const AdminDashboard: React.FC = () => {
               Total Participants: {participants.length}
             </Badge>
             <Button variant="secondary" onClick={() => setShowParticipantsModal(false)}>
+              Close
+            </Button>
+          </div>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Certificate View Modal */}
+      <Modal show={showViewCertModal} onHide={() => setShowViewCertModal(false)} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <i className="fas fa-certificate me-2"></i>
+            Certificate Details
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {certificateLoading ? (
+            <div className="text-center p-4">
+              <div className="spinner-border text-primary" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </div>
+              <p className="mt-2">Loading certificate details...</p>
+            </div>
+          ) : selectedCertificate ? (
+            <div>
+              <Row>
+                <Col md={6}>
+                  <Card className="mb-3">
+                    <Card.Header>
+                      <h6 className="mb-0">
+                        <i className="fas fa-id-card me-2"></i>
+                        Certificate Information
+                      </h6>
+                    </Card.Header>
+                    <Card.Body>
+                      <div className="mb-2">
+                        <strong>Certificate ID:</strong>
+                        <br />
+                        <code className="text-primary">{selectedCertificate.certificate_id}</code>
+                      </div>
+                      <div className="mb-2">
+                        <strong>Recipient Name:</strong>
+                        <br />
+                        {selectedCertificate.recipient_name}
+                      </div>
+                      <div className="mb-2">
+                        <strong>Participant ID:</strong>
+                        <br />
+                        {selectedCertificate.participant_id || 'ID not assigned'}
+                      </div>
+                      <div className="mb-2">
+                        <strong>Status:</strong>
+                        <br />
+                        <Badge bg={selectedCertificate.status === 'active' ? 'success' : 'danger'}>
+                          {selectedCertificate.status || 'Active'}
+                        </Badge>
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                <Col md={6}>
+                  <Card className="mb-3">
+                    <Card.Header>
+                      <h6 className="mb-0">
+                        <i className="fas fa-calendar me-2"></i>
+                        Event Information
+                      </h6>
+                    </Card.Header>
+                    <Card.Body>
+                      <div className="mb-2">
+                        <strong>Event Name:</strong>
+                        <br />
+                        {selectedCertificate.event_name}
+                      </div>
+                      <div className="mb-2">
+                        <strong>Issued Date:</strong>
+                        <br />
+                        {formatDate(selectedCertificate.issued_date)}
+                      </div>
+                      {selectedCertificate.status === 'revoked' && (
+                        <>
+                          <div className="mb-2">
+                            <strong>Revoked By:</strong>
+                            <br />
+                            {selectedCertificate.revoked_by || 'Not revoked'}
+                          </div>
+                          <div className="mb-2">
+                            <strong>Revocation Date:</strong>
+                            <br />
+                            {selectedCertificate.revoked_at ? formatDate(selectedCertificate.revoked_at) : 'Not revoked'}
+                          </div>
+                          <div className="mb-2">
+                            <strong>Revocation Reason:</strong>
+                            <br />
+                            <span className="text-muted">
+                              {selectedCertificate.revocation_reason || 'No reason provided'}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </Card.Body>
+                  </Card>
+                </Col>
+              </Row>
+              
+              {/* Additional certificate details if available */}
+              {certificateDetails && certificateDetails !== selectedCertificate && (
+                <Card>
+                  <Card.Header>
+                    <h6 className="mb-0">
+                      <i className="fas fa-info-circle me-2"></i>
+                      Additional Details
+                    </h6>
+                  </Card.Header>
+                  <Card.Body>
+                    <pre className="bg-light p-2 rounded">
+                      {JSON.stringify(certificateDetails, null, 2)}
+                    </pre>
+                  </Card.Body>
+                </Card>
+              )}
+            </div>
+          ) : (
+            <div className="text-center p-4">
+              <p className="text-muted">No certificate selected</p>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <div className="w-100 d-flex justify-content-between">
+            <div>
+              {selectedCertificate && (
+                <>
+                  <Button
+                    variant="primary"
+                    className="me-2"
+                    onClick={() => handleDownloadCertificate(selectedCertificate.certificate_id)}
+                  >
+                    <i className="fas fa-download me-1"></i>
+                    Download PDF
+                  </Button>
+                  {selectedCertificate.status !== 'revoked' && (
+                    <>
+                      <Button
+                        variant="warning"
+                        className="me-2"
+                        onClick={() => {
+                          setShowViewCertModal(false);
+                          handleReissueCertificate(selectedCertificate.certificate_id);
+                        }}
+                      >
+                        <i className="fas fa-redo me-1"></i>
+                        Re-issue
+                      </Button>
+                      <Button
+                        variant="danger"
+                        className="me-2"
+                        onClick={() => {
+                          setShowViewCertModal(false);
+                          handleRevokeCertificate(selectedCertificate.certificate_id);
+                        }}
+                      >
+                        <i className="fas fa-ban me-1"></i>
+                        Revoke
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            <Button variant="secondary" onClick={() => setShowViewCertModal(false)}>
               Close
             </Button>
           </div>

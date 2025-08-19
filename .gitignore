@@ -48,6 +48,34 @@ audit.log
 
 # Frontend build
 frontend/build/
+
+# Test files (temporary)
+test_*.py
+*test*.py
+simple_test.py
+debug_*.py
+reset_*.py
+
+# Migration scripts (one-time use)
+add_*.py
+migration_*.py
+run_migration.py
+
+# Documentation (status files)
+*_FIXED.md
+*_COMPLETE.md
+*_SUMMARY.md
+*_STATUS.md
+*_SOLUTION.md
+*_FIX.md
+PROJECT_STATUS.md
+CLEANUP_*.md
+
+# Generated certificates and uploads
+certificates/
+uploads/
+logs/
+templates/temp_*
 frontend/dist/
 frontend/.env.local
 frontend/.env.development.local

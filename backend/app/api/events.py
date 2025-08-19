@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.core.auth import get_current_approved_user, require_admin, require_super_admin
 from app.core.config import settings
 from app.models.database import User as UserModel, Event as EventModel
-from app.models.schemas import Event, EventCreate, EventUpdate, Response
+from app.models.schemas import Event, EventCreate, EventUpdate, EventWithAdmin, Response
 from app.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/events", tags=["Events"])
@@ -198,7 +198,7 @@ async def upload_event_template(
             detail=f"Template upload failed: {str(e)}"
         )
 
-@router.get("/", response_model=List[Event])
+@router.get("/", response_model=List[EventWithAdmin])
 async def list_events(
     skip: int = 0,
     limit: int = 100,
@@ -206,8 +206,10 @@ async def list_events(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_approved_user)
 ):
-    """List events"""
-    query = db.query(EventModel)
+    """List events with admin information"""
+    from sqlalchemy.orm import joinedload
+    
+    query = db.query(EventModel).options(joinedload(EventModel.admin))
     
     # Role-based filtering
     if current_user.role.value == "admin":
@@ -226,7 +228,26 @@ async def list_events(
         query = query.filter(EventModel.is_approved == True)
     
     events = query.offset(skip).limit(limit).all()
-    return events
+    
+    # Convert to EventWithAdmin format
+    result = []
+    for event in events:
+        event_dict = {
+            "id": event.id,
+            "name": event.name,
+            "description": event.description,
+            "date": event.date,
+            "admin_id": event.admin_id,
+            "admin_name": event.admin.full_name if event.admin else "Unknown Admin",
+            "is_approved": event.is_approved,
+            "approved_by": event.approved_by,
+            "template_path": event.template_path,
+            "status": event.status,
+            "created_at": event.created_at
+        }
+        result.append(event_dict)
+    
+    return result
 
 @router.get("/my-events", response_model=List[Event])
 async def get_my_events(
@@ -251,8 +272,12 @@ async def get_approved_events(
 ):
     """Get all approved events available for user registration"""
     try:
+        from sqlalchemy.orm import joinedload
+        
         # Get all approved events that are not closed yet
-        approved_events = db.query(EventModel).filter(
+        approved_events = db.query(EventModel).options(
+            joinedload(EventModel.admin)
+        ).filter(
             EventModel.is_approved == True,
             EventModel.status == "approved"
         ).order_by(EventModel.date.desc()).all()
@@ -574,9 +599,13 @@ async def delete_event_permanent(
             )
         
         # Get certificates count for reporting
-        from app.models.database import Certificate as CertificateModel
+        from app.models.database import Certificate as CertificateModel, EventParticipant as EventParticipantModel
         cert_count = db.query(CertificateModel).filter(
             CertificateModel.event_id == event_id
+        ).count()
+        
+        participant_count = db.query(EventParticipantModel).filter(
+            EventParticipantModel.event_id == event_id
         ).count()
         
         # Permanently delete all certificates and their files
@@ -603,6 +632,14 @@ async def delete_event_permanent(
             # Delete certificate from database
             db.delete(cert)
         
+        # Delete all event participants
+        participants = db.query(EventParticipantModel).filter(
+            EventParticipantModel.event_id == event_id
+        ).all()
+        
+        for participant in participants:
+            db.delete(participant)
+        
         # Delete template file if exists
         if event.template_path and os.path.exists(event.template_path):
             try:
@@ -611,28 +648,29 @@ async def delete_event_permanent(
                 print(f"Warning: Could not delete template file {event.template_path}: {e}")
         
         # Log the permanent deletion for audit
-        from app.models.database import AuditLog
-        audit_log = AuditLog(
+        from app.models.database import ActivityLog
+        audit_log = ActivityLog(
             user_id=current_user.id,
             action="PERMANENT_EVENT_DELETE",
             resource_type="Event",
-            resource_id=event_id,
-            old_values=f"Event: {event.name}, Certificates: {cert_count}",
-            new_values="PERMANENTLY DELETED",
-            details=f"Super Admin {current_user.email} permanently deleted event '{event.name}' and {cert_count} certificates"
+            resource_id=str(event_id),
+            details=f"Super Admin {current_user.email} permanently deleted event '{event.name}' with {cert_count} certificates and {participant_count} participants"
         )
         db.add(audit_log)
         
         event_name = event.name
+        # Delete the event itself
         db.delete(event)
+        # Commit all deletions
         db.commit()
         
         return Response(
             success=True,
-            message=f"Event '{event_name}' and all associated data permanently deleted. {cert_count} certificates and {deleted_files} files removed.",
+            message=f"Event '{event_name}' and all associated data permanently deleted. {cert_count} certificates, {participant_count} participants, and {deleted_files} files removed.",
             data={
                 "event_id": event_id, 
                 "certificates_deleted": cert_count,
+                "participants_deleted": participant_count,
                 "files_deleted": deleted_files,
                 "permanent_deletion": True,
                 "audit_logged": True

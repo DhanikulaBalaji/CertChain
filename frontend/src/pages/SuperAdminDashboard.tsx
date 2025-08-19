@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Row, Col, Card, Button, Table, Badge, Alert, Tab, Tabs, Form, Modal } from 'react-bootstrap';
 import { useAuth } from '../services/AuthContext';
 import api, { eventsAPI } from '../services/api';
@@ -28,6 +28,7 @@ interface Event {
   is_approved: boolean;
   status: string;
   admin_id: number;
+  admin_name?: string;  // Admin who created the event
   created_at: string;
 }
 
@@ -98,6 +99,10 @@ const SuperAdminDashboard: React.FC = () => {
   const [eventSearch, setEventSearch] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('');
   const [eventApprovalFilter, setEventApprovalFilter] = useState('');
+  
+  // Debounced search values for API calls
+  const [debouncedUserSearch, setDebouncedUserSearch] = useState('');
+  const [debouncedEventSearch, setDebouncedEventSearch] = useState('');
 
   // Event participant modal states
   const [showParticipantModal, setShowParticipantModal] = useState(false);
@@ -125,6 +130,25 @@ const SuperAdminDashboard: React.FC = () => {
     status: 'valid'
   });
 
+  // Certificate view modal states
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewCertificate, setViewCertificate] = useState<Certificate | null>(null);
+
+  // Debounce search inputs to avoid excessive API calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedUserSearch(userSearch);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [userSearch]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedEventSearch(eventSearch);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [eventSearch]);
+
   useEffect(() => {
     fetchDashboardData();
     
@@ -136,7 +160,7 @@ const SuperAdminDashboard: React.FC = () => {
     //   fetchDashboardData();
     // }, 600000); // 10 minutes
     // return () => clearInterval(interval);
-  }, [userSearch, eventSearch, userRoleFilter, eventApprovalFilter]);
+  }, [debouncedUserSearch, debouncedEventSearch, userRoleFilter, eventApprovalFilter]);
 
   const fetchDashboardData = useCallback(async () => {
     try {
@@ -144,12 +168,12 @@ const SuperAdminDashboard: React.FC = () => {
       
       // Build query parameters for users
       const userParams = new URLSearchParams();
-      if (userSearch) userParams.append('search', userSearch);
+      if (debouncedUserSearch) userParams.append('search', debouncedUserSearch);
       if (userRoleFilter) userParams.append('role', userRoleFilter);
       
       // Build query parameters for events
       const eventParams = new URLSearchParams();
-      if (eventSearch) eventParams.append('search', eventSearch);
+      if (debouncedEventSearch) eventParams.append('search', debouncedEventSearch);
       if (eventApprovalFilter) eventParams.append('is_approved', eventApprovalFilter);
       
       const [usersRes, eventsRes, certsRes, statsRes] = await Promise.all([
@@ -170,7 +194,7 @@ const SuperAdminDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [userSearch, eventSearch, userRoleFilter, eventApprovalFilter]);
+  }, [debouncedUserSearch, debouncedEventSearch, userRoleFilter, eventApprovalFilter]);
 
   const fetchActivityLogs = async () => {
     try {
@@ -292,6 +316,8 @@ const SuperAdminDashboard: React.FC = () => {
             const finalConfirm = prompt('Type "DELETE FOREVER" to confirm permanent deletion:');
             if (finalConfirm === 'DELETE FOREVER') {
               await eventsAPI.deleteEventPermanent(eventId);
+              setSuccess('Event permanently deleted successfully!');
+              fetchDashboardData(); // Refresh data after successful deletion
             } else {
               alert('Permanent deletion cancelled - incorrect confirmation text.');
               return;
@@ -302,8 +328,10 @@ const SuperAdminDashboard: React.FC = () => {
         } else {
           return; // User cancelled permanent deletion
         }
+      } else {
+        // For other actions, refresh data
+        fetchDashboardData(); // Refresh data
       }
-      fetchDashboardData(); // Refresh data
     } catch (err: any) {
       console.error(`Failed to ${action} event:`, err);
       setError(`Failed to ${action} event: ${handleApiError(err)}`);
@@ -442,6 +470,18 @@ const SuperAdminDashboard: React.FC = () => {
     setShowCertUpdateModal(true);
   };
 
+  const handleViewCertificate = async (certificate: Certificate) => {
+    try {
+      const response = await api.get(`/certificates/${certificate.id}/details`);
+      setViewCertificate({ ...certificate, ...response.data });
+      setShowViewModal(true);
+    } catch (error) {
+      console.error('Error fetching certificate details:', error);
+      setViewCertificate(certificate);
+      setShowViewModal(true);
+    }
+  };
+
   const handleSearch = () => {
     // Filters are automatically applied through useEffect
   };
@@ -453,6 +493,48 @@ const SuperAdminDashboard: React.FC = () => {
     setEventApprovalFilter('');
     // Data will be refreshed automatically through useEffect
   };
+
+  // Client-side filtering for instant search feedback
+  const filteredEvents = useMemo(() => {
+    return events.filter(event => {
+      const searchTerm = eventSearch.toLowerCase().trim();
+      if (searchTerm) {
+        const matchesName = event.name.toLowerCase().includes(searchTerm);
+        const matchesDescription = event.description?.toLowerCase().includes(searchTerm);
+        if (!matchesName && !matchesDescription) {
+          return false;
+        }
+      }
+      
+      if (eventApprovalFilter) {
+        const isApproved = eventApprovalFilter === 'true';
+        if (event.is_approved !== isApproved) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+  }, [events, eventSearch, eventApprovalFilter]);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter(user => {
+      const searchTerm = userSearch.toLowerCase().trim();
+      if (searchTerm) {
+        const matchesName = user.full_name.toLowerCase().includes(searchTerm);
+        const matchesEmail = user.email.toLowerCase().includes(searchTerm);
+        if (!matchesName && !matchesEmail) {
+          return false;
+        }
+      }
+      
+      if (userRoleFilter && user.role !== userRoleFilter) {
+        return false;
+      }
+      
+      return true;
+    });
+  }, [users, userSearch, userRoleFilter]);
 
   const clearAllNotifications = async () => {
     try {
@@ -679,7 +761,14 @@ const SuperAdminDashboard: React.FC = () => {
               <Row className="mb-3">
                 <Col md={4}>
                   <Form.Group>
-                    <Form.Label>Search Users</Form.Label>
+                    <Form.Label>
+                      Search Users
+                      {userSearch && (
+                        <small className="text-muted ms-2">
+                          ({filteredUsers.length} of {users.length} users)
+                        </small>
+                      )}
+                    </Form.Label>
                     <Form.Control
                       type="text"
                       placeholder="Search by email or name..."
@@ -726,7 +815,7 @@ const SuperAdminDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map(user => (
+                    {filteredUsers.map(user => (
                       <tr key={user.id}>
                         <td>
                           <div>
@@ -819,7 +908,14 @@ const SuperAdminDashboard: React.FC = () => {
               <Row className="mb-3">
                 <Col md={4}>
                   <Form.Group>
-                    <Form.Label>Search Events</Form.Label>
+                    <Form.Label>
+                      Search Events 
+                      {eventSearch && (
+                        <small className="text-muted ms-2">
+                          ({filteredEvents.length} of {events.length} events)
+                        </small>
+                      )}
+                    </Form.Label>
                     <Form.Control
                       type="text"
                       placeholder="Search by event name or description..."
@@ -864,7 +960,7 @@ const SuperAdminDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {events.map(event => (
+                    {filteredEvents.map(event => (
                       <tr key={event.id}>
                         <td>
                           <strong>{event.name}</strong><br />
@@ -872,7 +968,9 @@ const SuperAdminDashboard: React.FC = () => {
                         </td>
                         <td>{new Date(event.date).toLocaleDateString()}</td>
                         <td>{getStatusBadge(event.is_approved ? 'approved' : 'pending', 'event')}</td>
-                        <td>Admin ID: {event.admin_id}</td>
+                        <td>
+                          <strong>{event.admin_name || `Admin ID: ${event.admin_id}`}</strong>
+                        </td>
                         <td>{new Date(event.created_at).toLocaleDateString()}</td>
                         <td>
                           {!event.is_approved ? (
@@ -1005,7 +1103,7 @@ const SuperAdminDashboard: React.FC = () => {
                           <code>{cert.certificate_id}</code>
                         </td>
                         <td>
-                          <code>{cert.participant_id || 'N/A'}</code>
+                          <code>{cert.participant_id || 'Auto-generated'}</code>
                         </td>
                         <td>
                           <div>
@@ -1022,11 +1120,19 @@ const SuperAdminDashboard: React.FC = () => {
                             )}
                           </div>
                         </td>
-                        <td>{cert.event?.name || 'N/A'}</td>
+                        <td>{cert.event?.name || 'Event information unavailable'}</td>
                         <td>{getStatusBadge(cert.status, 'certificate')}</td>
                         <td>{formatDate(cert.issued_at)}</td>
                         <td>
                           <div className="btn-group">
+                            <Button 
+                              size="sm" 
+                              variant="outline-info"
+                              onClick={() => handleViewCertificate(cert)}
+                              title="View certificate details"
+                            >
+                              👁️ View
+                            </Button>
                             <Button 
                               size="sm" 
                               variant="outline-primary"
@@ -1114,7 +1220,7 @@ const SuperAdminDashboard: React.FC = () => {
                             )}
                           </td>
                           <td>
-                            <code>{log.ip_address || 'N/A'}</code>
+                            <code>{log.ip_address || 'Local system'}</code>
                           </td>
                         </tr>
                       ))}
@@ -1264,6 +1370,80 @@ const SuperAdminDashboard: React.FC = () => {
         />
       )}
 
+      {/* Certificate View Modal */}
+      <Modal show={showViewModal} onHide={() => setShowViewModal(false)} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title>👁️ Certificate Details</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {viewCertificate && (
+            <div className="space-y-4">
+              <div className="row">
+                <div className="col-md-6">
+                  <p><strong>Certificate ID:</strong></p>
+                  <p className="text-monospace bg-light p-2 rounded">{viewCertificate.certificate_id}</p>
+                </div>
+                <div className="col-md-6">
+                  <p><strong>Status:</strong></p>
+                  <p>
+                    <span className={`badge badge-${viewCertificate.status === 'valid' ? 'success' : 
+                      viewCertificate.status === 'revoked' ? 'danger' : 'warning'}`}>
+                      {viewCertificate.status?.toUpperCase()}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-md-6">
+                  <p><strong>Recipient Name:</strong></p>
+                  <p>{viewCertificate.recipient_name}</p>
+                </div>
+                <div className="col-md-6">
+                  <p><strong>Event:</strong></p>
+                  <p>{viewCertificate.event?.name || 'Event information not available'}</p>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-md-6">
+                  <p><strong>Email:</strong></p>
+                  <p>{viewCertificate.recipient_email || 'Email not provided'}</p>
+                </div>
+                <div className="col-md-6">
+                  <p><strong>Phone:</strong></p>
+                  <p>{viewCertificate.recipient_phone || 'Phone not provided'}</p>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-md-6">
+                  <p><strong>Issued Date:</strong></p>
+                  <p>{viewCertificate.issued_at ? new Date(viewCertificate.issued_at).toLocaleString() : 'Issue date not available'}</p>
+                </div>
+                <div className="col-md-6">
+                  <p><strong>Participant ID:</strong></p>
+                  <p>{viewCertificate.participant_id || 'Auto-generated ID'}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowViewModal(false)}>
+            Close
+          </Button>
+          {viewCertificate && (
+            <Button 
+              variant="primary" 
+              onClick={() => window.open(`/api/certificates/${viewCertificate.id}/download`, '_blank')}
+            >
+              📥 Download Certificate
+            </Button>
+          )}
+        </Modal.Footer>
+      </Modal>
+
       {/* Certificate Update Modal */}
       <Modal show={showCertUpdateModal} onHide={() => setShowCertUpdateModal(false)} size="lg">
         <Modal.Header closeButton>
@@ -1275,7 +1455,7 @@ const SuperAdminDashboard: React.FC = () => {
               <Alert variant="info">
                 <strong>Certificate ID:</strong> <code>{selectedCertificate.certificate_id}</code>
                 <br />
-                <strong>Event:</strong> {selectedCertificate.event?.name || 'N/A'}
+                <strong>Event:</strong> {selectedCertificate.event?.name || 'Event not specified'}
                 <br />
                 <strong>Current Status:</strong> {getStatusBadge(selectedCertificate.status, 'certificate')}
               </Alert>

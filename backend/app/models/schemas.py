@@ -103,6 +103,20 @@ class Event(EventBase):
     class Config:
         from_attributes = True
 
+class EventWithAdmin(EventBase):
+    """Event with admin details for frontend display"""
+    id: int
+    admin_id: Optional[int] = None
+    admin_name: Optional[str] = None
+    is_approved: bool
+    approved_by: Optional[int] = None
+    template_path: Optional[str] = None
+    status: Optional[str] = "pending"
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # Certificate Schemas
 class CertificateBase(BaseModel):
     recipient_name: str
@@ -141,10 +155,16 @@ class CertificateWithEvent(BaseModel):
     id: int
     certificate_id: str
     recipient_name: str
+    recipient_email: Optional[str] = None
+    participant_id: Optional[str] = None
     event_name: str
     event_date: str
+    event_description: Optional[str] = None
     status: str
     issued_date: str
+    sha256_hash: Optional[str] = None
+    is_verified: bool = False
+    blockchain_tx_hash: Optional[str] = None
 
     class Config:
         from_attributes = True

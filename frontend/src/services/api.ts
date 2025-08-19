@@ -1,6 +1,6 @@
 import axios, { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 
-const API_BASE_URL = 'http://localhost:8001';
+const API_BASE_URL = 'http://localhost:8000';
 
 // Create axios instance with default config
 const api = axios.create({

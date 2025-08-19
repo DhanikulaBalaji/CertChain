@@ -13,7 +13,7 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app.core.auth import get_current_approved_user, require_admin, require_super_admin
-from app.models.database import User as UserModel, Certificate as CertificateModel, Event as EventModel, EventParticipant as EventParticipantModel, CertificateStatus
+from app.models.database import User as UserModel, Certificate as CertificateModel, Event as EventModel, EventParticipant as EventParticipantModel, CertificateStatus, UserRole
 from app.models.schemas import Certificate, CertificateCreate, CertificateBulkCreate, ValidationRequest, ValidationResult, Response, CertificateWithEvent
 from app.services.certificate_generator import certificate_generator
 from app.services.certificate_validator import certificate_validator
@@ -192,6 +192,7 @@ async def get_user_certificates(
         result = []
         for cert in certificates:
             event_name = cert.event.name if cert.event else "Unknown Event"
+            event_description = cert.event.description if cert.event else None
             event_date = cert.event.date.strftime('%Y-%m-%d') if cert.event and cert.event.date else "Unknown Date"
             issued_date = cert.issued_at.strftime('%Y-%m-%d') if cert.issued_at else "Unknown Date"
             
@@ -199,10 +200,16 @@ async def get_user_certificates(
                 "id": cert.id,
                 "certificate_id": cert.certificate_id,
                 "recipient_name": cert.recipient_name,
+                "recipient_email": cert.recipient_email or "Not provided",
+                "participant_id": cert.participant_id or f"PART-{cert.id:04d}",
                 "event_name": event_name,
+                "event_description": event_description,
                 "event_date": event_date,
                 "status": cert.status,
-                "issued_date": issued_date
+                "issued_date": issued_date,
+                "sha256_hash": cert.sha256_hash[:16] + "..." if cert.sha256_hash else "Not available",
+                "is_verified": cert.is_verified,
+                "blockchain_tx_hash": cert.blockchain_tx_hash or "Pending blockchain verification"
             }
             result.append(cert_dict)
         
@@ -827,8 +834,8 @@ async def reissue_certificate(
                 detail="Certificate not found"
             )
         
-        # Check if admin owns the event
-        if certificate.event.admin_id != current_user.id:
+        # Check if admin owns the event OR if user is SuperAdmin
+        if certificate.event.admin_id != current_user.id and current_user.role != UserRole.SUPER_ADMIN:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only re-issue certificates for your events"
