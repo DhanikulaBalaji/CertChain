@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Spinner, Button } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faQrcode, faTimes, faCamera, faUpload } from '@fortawesome/free-solid-svg-icons';
+import jsQR from 'jsqr';
 
 interface QRScannerEmbeddedProps {
   onScan: (result: string) => void;
@@ -20,6 +21,69 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
   const [error, setError] = useState<string>('');
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [scanMode, setScanMode] = useState<'camera' | 'upload'>('camera');
+  const [scanInterval, setScanInterval] = useState<NodeJS.Timeout | null>(null);
+  
+  // Extract certificate ID from QR code data
+  const extractCertificateId = (qrData: string): string | null => {
+    try {
+      // Handle different QR code formats
+      if (qrData.startsWith('CERT-')) {
+        return qrData;
+      }
+      
+      // If it's a URL, extract the certificate ID from query parameters
+      if (qrData.includes('certificate_id=')) {
+        const url = new URL(qrData);
+        return url.searchParams.get('certificate_id');
+      }
+      
+      // Try to parse as JSON if it contains certificate data
+      if (qrData.includes('{') && qrData.includes('}')) {
+        const data = JSON.parse(qrData);
+        return data.certificate_id || data.certificateId || null;
+      }
+      
+      // If it's just the certificate ID
+      if (qrData.match(/^CERT-[A-F0-9]+$/)) {
+        return qrData;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error parsing QR code data:', error);
+      return null;
+    }
+  };
+  
+  // Scan QR code from camera
+  const scanQRFromCamera = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    
+    if (!context || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    
+    if (code) {
+      const certificateId = extractCertificateId(code.data);
+      if (certificateId) {
+        console.log('QR Code detected:', certificateId);
+        onScan(certificateId);
+        stopCamera();
+      } else {
+        console.log('QR Code detected but no certificate ID found:', code.data);
+        setError('QR code does not contain a valid certificate ID');
+      }
+    }
+  };
   
   // Start camera stream
   const startCamera = async () => {
@@ -40,6 +104,10 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
         videoRef.current.play();
+        
+        // Start scanning for QR codes
+        const interval = setInterval(scanQRFromCamera, 100); // Scan every 100ms
+        setScanInterval(interval);
       }
       
     } catch (err) {
@@ -64,6 +132,12 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
         videoRef.current.srcObject = null;
         videoRef.current.pause();
       }
+      
+      if (scanInterval) {
+        clearInterval(scanInterval);
+        setScanInterval(null);
+      }
+      
       setIsScanning(false);
     } catch (error) {
       console.log('Error stopping camera:', error);
@@ -79,12 +153,36 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result as string;
-      // For demo purposes, we'll simulate QR code detection
-      // In a real implementation, you'd use a QR code detection library
       if (result) {
-        // Mock QR code detection - in real implementation use jsQR or similar
-        const mockQRResult = "CERT-087EF428246A"; // This would be extracted from the image
-        onScan(mockQRResult);
+        // Create image element to extract QR code
+        const img = new Image();
+        img.onload = () => {
+          // Create canvas to process the image
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          
+          if (context) {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            context.drawImage(img, 0, 0);
+            
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            
+            if (code) {
+              const certificateId = extractCertificateId(code.data);
+              if (certificateId) {
+                console.log('QR Code found in uploaded image:', certificateId);
+                onScan(certificateId);
+              } else {
+                setError('QR code found but does not contain a valid certificate ID');
+              }
+            } else {
+              setError('No QR code found in the uploaded image');
+            }
+          }
+        };
+        img.src = result;
       }
     };
     reader.readAsDataURL(file);
@@ -101,13 +199,13 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
     };
   }, []);
 
-  // Mock QR scanning (in real implementation, you'd use jsQR library)
-  const mockScanQR = () => {
-    // Simulate QR code detection
-    setTimeout(() => {
-      onScan("CERT-087EF428246A");
-      stopCamera();
-    }, 2000);
+  // Manual test scan function (for testing purposes)
+  const testScanQR = () => {
+    // Use a real certificate ID that exists in the database
+    const testCertificateId = "CERT-0F2A92DFA52A"; // Alice Johnson's certificate
+    console.log('Manual test scan triggered with certificate ID:', testCertificateId);
+    onScan(testCertificateId);
+    stopCamera();
   };
 
   return (
@@ -178,9 +276,9 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
               
               <div className="text-center mt-3">
                 <div className="d-flex gap-2 justify-content-center">
-                  <Button variant="success" onClick={mockScanQR}>
+                  <Button variant="success" onClick={testScanQR}>
                     <FontAwesomeIcon icon={faQrcode} className="me-2" />
-                    Simulate Scan
+                    Test Scan (Alice Johnson)
                   </Button>
                   <Button variant="secondary" onClick={stopCamera}>
                     Stop Camera
@@ -188,7 +286,7 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
                 </div>
                 <div className="mt-2">
                   <Spinner animation="border" size="sm" className="me-2" />
-                  <small className="text-muted">Position QR code within the frame</small>
+                  <small className="text-muted">Position QR code within the frame - scanning automatically...</small>
                 </div>
               </div>
             </div>
