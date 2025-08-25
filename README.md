@@ -2,12 +2,16 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/pinnamanenipraneeth08/certificate-system)
 [![Python](https://img.shields.io/badge/Python-3.8+-green)](https://python.org)
+# 🎓 Secure Blockchain-Based Certificate Generation and Validation Framework
+
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/pinnamanenipraneeth08/certificate-system)
+[![Python](https://img.shields.io/badge/Python-3.8+-green)](https://python.org)
 [![React](https://img.shields.io/badge/React-18+-blue)](https://reactjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-4.9+-blue)](https://typescriptlang.org)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 ## 🌟 Project Overview
-A comprehensive digital certificate management system that leverages blockchain technology for tamper-proof certificate generation, validation, and management with enterprise-grade security and role-based access control.
+A real-time digital certificate management system leveraging blockchain for tamper-proof certificate generation, validation, and management, with enterprise-grade security and role-based access control. This README reflects the actual working state of the project as found in this repository.
 
 ## ✨ Key Features
 - 🔐 **Blockchain-anchored certificates** using Ethereum smart contracts
@@ -41,17 +45,17 @@ A comprehensive digital certificate management system that leverages blockchain 
 # Clone and setup everything
 git clone https://github.com/yourusername/certificate-system.git
 cd certificate-system
-python setup.py
+📊 **Analytics dashboard**
 ```
 
-### 🏃‍♂️ Quick Run
-
-```powershell
-# Start the complete system
-QUICK_START.bat
-```
-
-**Access Points:**
+ **Backend**: Python FastAPI (see `backend/`)
+ **Frontend**: React.js + TypeScript (see `frontend/`)
+ **Blockchain**: Ethereum, Solidity, Web3.py (see `contracts/`)
+ **Database**: SQLite (dev, see `backend/certificate_system.db`)
+ **PDF Generation**: ReportLab
+ **OCR & Analysis**: Tesseract, OpenCV
+ **QR Codes**: qrcode library
+ **Authentication**: JWT tokens
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8001
 - **API Documentation**: http://localhost:8001/docs
@@ -63,13 +67,8 @@ QUICK_START.bat
 ### 🐳 Docker Deployment (Production)
 
 ```powershell
-# Build and start all services
-docker-compose build
-docker-compose up -d
 
 # Check service status
-docker-compose ps
-
 # View logs
 docker-compose logs -f
 ```
@@ -102,11 +101,6 @@ docker-compose logs -f
 
 ### Deployment
 ```powershell
-# Deploy to Ethereum testnet
-cd contracts
-python deploy_contract.py
-
-# Test blockchain integration
 python test_blockchain.py
 ```
 
@@ -119,44 +113,16 @@ python test_blockchain.py
 - **System configuration**: Modify system settings
 
 ### Admin
-- **Event management**: Create and manage events
-- **Certificate generation**: Issue certificates for events
-- **Template management**: Create and modify certificate templates
-- **Participant management**: Manage event participants
 
 ### User
-- **Certificate validation**: Validate any certificate
-- **Personal dashboard**: View own certificates
-- **Event participation**: Register for approved events
-- **Certificate download**: Access own certificates
 
 ## Security Features
-
-### Implemented Security Measures
-- ✅ **JWT Authentication** with role-based access control
-- ✅ **Input validation** and SQL injection prevention
 - ✅ **XSS protection** with content security policies
 - ✅ **Rate limiting** to prevent abuse
 - ✅ **CORS policy** configuration
 - ✅ **Security headers** implementation
-- ✅ **Comprehensive audit logging** for all operations
-- ✅ **Password policy** enforcement
-- ✅ **Account lockout** protection
-- ✅ **Certificate tamper detection** using OCR
-- ✅ **Blockchain verification** for certificate integrity
-
-### Audit & Monitoring
-- **Real-time security monitoring**
-- **Failed authentication tracking**
-- **Certificate access logging**
-- **Suspicious activity detection**
 - **Comprehensive audit trails**
 
-## Development Setup
-
-### Backend Setup
-```powershell
-cd backend
 python -m venv venv
 venv\Scripts\activate  # Windows
 pip install -r requirements.txt
@@ -245,31 +211,16 @@ UPLOADS_DIR=./uploads
 
 The system provides comprehensive API documentation:
 - **Interactive API docs**: http://localhost:8001/docs
-- **ReDoc format**: http://localhost:8001/redoc
-- **OpenAPI JSON**: http://localhost:8001/openapi.json
-
 ### Key API Endpoints
 
 #### Authentication
 - `POST /auth/login` - User login
-- `POST /auth/register` - User registration
-- `GET /auth/me` - Get current user info
-
 #### Certificates
 - `POST /admin/certificates/generate-single` - Generate single certificate
-- `POST /admin/certificates/generate-bulk` - Bulk certificate generation
-- `POST /certificates/validate` - Validate certificate
-- `GET /certificates/download/{id}/pdf` - Download certificate PDF
-
 #### Events
 - `POST /events/` - Create new event
-- `GET /events/` - List events
-- `PUT /events/{id}/approve` - Approve event (admin)
-
 #### Blockchain
 - `GET /blockchain/status` - Blockchain connection status
-- `POST /blockchain/verify/{certificate_id}` - Blockchain verification
-
 ## Production Deployment
 
 ### Docker Production Setup
@@ -344,10 +295,6 @@ python test_blockchain.py
 
 ### Code Standards
 - **Python**: Follow PEP 8 style guide
-- **TypeScript**: Use ESLint and Prettier
-- **Solidity**: Follow Solidity style guide
-- **Git**: Use conventional commit messages
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -355,10 +302,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - **OpenZeppelin** for smart contract libraries
-- **FastAPI** for the excellent Python web framework
-- **React.js** community for frontend components
-- **Ethereum** community for blockchain infrastructure
-
 ---
-
 **Made with ❤️ for secure, verifiable digital certificates**
