@@ -1,111 +1,99 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Button, Alert, Spinner, Badge, Modal } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { 
-  faCertificate, 
-  faDownload, 
-  faQrcode, 
-  faShieldAlt, 
-  faCalendarAlt, 
-  faUser, 
-  faHashtag,
-  faCheckCircle,
-  faTimesCircle,
-  faExclamationTriangle,
-  faArrowLeft,
-  faLink,
-  faEye,
-  faFileAlt
-} from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../services/AuthContext';
 import api from '../services/api';
+import './CertificateDetailsPage.css';
 
 interface CertificateDetails {
   id: number;
   certificate_id: string;
   recipient_name: string;
+  recipient_email?: string;
+  participant_id?: string;
   event_name: string;
+  event_description?: string;
   event_date: string;
+  event_creator?: string;
   issued_date: string;
   status: string;
-  sha256_hash: string;
+  sha256_hash?: string;
   blockchain_tx_hash?: string;
-  qr_code_data?: string;
   is_verified: boolean;
-  pdf_path?: string;
-  validation_details?: {
-    blockchain_verified: boolean;
-    pdf_integrity: boolean;
-    ocr_verified: boolean;
-    hash_match: boolean;
+  verification_details?: {
+    metadata_integrity: boolean;
+    hash_verification: boolean;
+    database_match: boolean;
+    blockchain_verification: boolean;
   };
+  verification_score?: number;
 }
 
 const CertificateDetailsPage: React.FC = () => {
   const { certificateId } = useParams<{ certificateId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  
-  const [certificate, setCertificate] = useState<CertificateDetails | null>(null);
+
+  const [cert, setCert] = useState<CertificateDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [validating, setValidating] = useState(false);
-  const [showQRModal, setShowQRModal] = useState(false);
-  const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
-    if (certificateId) {
-      fetchCertificateDetails();
-    }
+    if (certificateId) fetchCertificate();
   }, [certificateId]);
 
-  const fetchCertificateDetails = async () => {
+  const fetchCertificate = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const response = await api.get(`/certificates/${certificateId}`);
-      setCertificate(response.data);
-      
-      // Auto-validate the certificate
-      await validateCertificate();
+      // Use the public endpoint - works without auth, returns full verification
+      const response = await api.get(`/certificates/public/${certificateId}`);
+      const data = response.data;
+      // Map public endpoint response to our interface
+      setCert({
+        id: 0,
+        certificate_id: data.certificate_id,
+        recipient_name: data.recipient_name,
+        recipient_email: data.recipient_email,
+        participant_id: data.participant_id,
+        event_name: data.event_name,
+        event_description: data.event_description,
+        event_date: data.event_date || '',
+        event_creator: data.event_creator,
+        issued_date: data.issued_date || '',
+        status: data.status,
+        sha256_hash: data.sha256_hash,
+        blockchain_tx_hash: data.blockchain_tx_hash,
+        is_verified: data.is_verified,
+        verification_details: data.verification_result?.verification_details,
+        verification_score: data.verification_result?.verification_score,
+      });
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to fetch certificate details');
+      // Fallback to authenticated endpoint
+      try {
+        const response2 = await api.get(`/certificates/${certificateId}`);
+        const d = response2.data;
+        setCert({
+          ...d,
+          event_name: d.event?.name || d.event_name || 'Unknown Event',
+          event_date: d.event?.date || d.event_date || '',
+          issued_date: d.issued_at || '',
+        });
+      } catch (err2: any) {
+        setError(err2.response?.data?.detail || 'Certificate not found');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const validateCertificate = async () => {
+  const handleDownload = async () => {
     if (!certificateId) return;
-    
+    setDownloading(true);
     try {
-      setValidating(true);
-      const response = await api.post('/certificates/validate', {
-        certificate_id: certificateId
+      const response = await api.get(`/certificates/download/${certificateId}`, {
+        responseType: 'blob',
       });
-      
-      if (certificate) {
-        setCertificate(prev => prev ? {
-          ...prev,
-          validation_details: response.data.details
-        } : null);
-      }
-    } catch (err: any) {
-      console.error('Validation failed:', err);
-    } finally {
-      setValidating(false);
-    }
-  };
-
-  const downloadCertificate = async () => {
-    if (!certificateId) return;
-    
-    try {
-      const response = await api.get(`/certificates/${certificateId}/download`, {
-        responseType: 'blob'
-      });
-      
-      // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -116,318 +104,255 @@ const CertificateDetailsPage: React.FC = () => {
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
       setError('Failed to download certificate');
+    } finally {
+      setDownloading(false);
     }
   };
 
-  const generateQRCode = () => {
-    if (certificate?.qr_code_data) {
-      // For demo purposes, we'll create a simple QR code display
-      // In production, you'd generate an actual QR code image
-      setQrCodeImage(certificate.qr_code_data);
-      setShowQRModal(true);
+  const handleVerify = async () => {
+    if (!certificateId) return;
+    setVerifying(true);
+    try {
+      const response = await api.post('/certificates/verify-public', {
+        certificate_id: certificateId,
+        verification_type: 'id_lookup'
+      });
+      if (cert && response.data.verification_details) {
+        setCert(prev => prev ? {
+          ...prev,
+          verification_details: response.data.verification_details,
+          verification_score: response.data.certificate?.verification_score,
+          is_verified: response.data.success,
+        } : prev);
+      }
+    } catch { /* silent */ }
+    finally { setVerifying(false); }
+  };
+
+  const getStatusStyle = (s: string) => {
+    switch (s?.toLowerCase()) {
+      case 'active': return { bg: 'rgba(16,185,129,0.2)', color: '#34d399', border: 'rgba(16,185,129,0.4)', label: '✓ Active' };
+      case 'revoked': return { bg: 'rgba(239,68,68,0.2)', color: '#f87171', border: 'rgba(239,68,68,0.4)', label: '✗ Revoked' };
+      default: return { bg: 'rgba(148,163,184,0.15)', color: '#94a3b8', border: 'rgba(148,163,184,0.3)', label: s };
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'active':
-        return <Badge bg="success"><FontAwesomeIcon icon={faCheckCircle} className="me-1" />Active</Badge>;
-      case 'revoked':
-        return <Badge bg="danger"><FontAwesomeIcon icon={faTimesCircle} className="me-1" />Revoked</Badge>;
-      case 'suspended':
-        return <Badge bg="warning"><FontAwesomeIcon icon={faExclamationTriangle} className="me-1" />Suspended</Badge>;
-      default:
-        return <Badge bg="secondary">Unknown</Badge>;
-    }
-  };
-
-  const getVerificationBadge = (verified: boolean) => {
-    return verified ? 
-      <Badge bg="success"><FontAwesomeIcon icon={faCheckCircle} className="me-1" />Verified</Badge> :
-      <Badge bg="danger"><FontAwesomeIcon icon={faTimesCircle} className="me-1" />Unverified</Badge>;
-  };
+  const Check = ({ val }: { val: boolean }) => (
+    <span className={`cdp-check ${val ? 'cdp-check-pass' : 'cdp-check-fail'}`}>
+      {val ? '✓' : '✗'} {val ? 'Pass' : 'Fail'}
+    </span>
+  );
 
   if (loading) {
     return (
-      <Container className="mt-4 text-center">
-        <Spinner animation="border" variant="primary" />
-        <p className="mt-3">Loading certificate details...</p>
-      </Container>
+      <div className="cdp-page">
+        <div className="cdp-loading">
+          <div className="cdp-loader" />
+          <p>Loading certificate details...</p>
+        </div>
+      </div>
     );
   }
 
-  if (error || !certificate) {
+  if (error || !cert) {
     return (
-      <Container className="mt-4">
-        <Alert variant="danger">
-          <FontAwesomeIcon icon={faTimesCircle} className="me-2" />
-          {error || 'Certificate not found'}
-        </Alert>
-        <Button variant="primary" onClick={() => navigate(-1)}>
-          <FontAwesomeIcon icon={faArrowLeft} className="me-2" />
-          Go Back
-        </Button>
-      </Container>
+      <div className="cdp-page">
+        <div className="cdp-error-screen">
+          <span className="cdp-error-icon">❌</span>
+          <h2>{error || 'Certificate not found'}</h2>
+          <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(-1)}>
+            ← Go Back
+          </button>
+        </div>
+      </div>
     );
   }
+
+  const statusStyle = getStatusStyle(cert.status);
 
   return (
-    <Container className="mt-4">
+    <div className="cdp-page">
       {/* Header */}
-      <Row className="mb-4">
-        <Col>
-          <div className="d-flex justify-content-between align-items-center">
-            <div>
-              <h2>
-                <FontAwesomeIcon icon={faCertificate} className="me-3 text-primary" />
-                Certificate Details
-              </h2>
-              <p className="text-muted">Certificate ID: {certificate.certificate_id}</p>
+      <div className="cdp-header">
+        <button className="cdp-back-btn" onClick={() => navigate(-1)}>
+          ← Back
+        </button>
+        <div className="cdp-header-title">
+          <h1>🎓 Certificate Details</h1>
+          <code className="cdp-cert-id">{cert.certificate_id}</code>
+        </div>
+        <div className="cdp-header-actions">
+          <button
+            className="cdp-btn cdp-btn-verify"
+            onClick={handleVerify}
+            disabled={verifying}
+          >
+            {verifying ? <><span className="cdp-spinner" /> Verifying...</> : '🔍 Re-verify'}
+          </button>
+          <button
+            className="cdp-btn cdp-btn-download"
+            onClick={handleDownload}
+            disabled={downloading || cert.status?.toLowerCase() === 'revoked'}
+          >
+            {downloading ? <><span className="cdp-spinner" /> Downloading...</> : '⬇️ Download PDF'}
+          </button>
+        </div>
+      </div>
+
+      <div className="cdp-content">
+        {/* Main Info Card */}
+        <div className="cdp-main-grid">
+          {/* Left: Certificate Info */}
+          <div className="cdp-card cdp-info-card">
+            <div className="cdp-card-gradient" />
+            <div className="cdp-cert-icon-wrap">
+              <span className="cdp-cert-big-icon">🎓</span>
             </div>
-            <div>
-              <Button variant="outline-secondary" onClick={() => navigate(-1)} className="me-2">
-                <FontAwesomeIcon icon={faArrowLeft} className="me-2" />
-                Back
-              </Button>
-              <Button variant="primary" onClick={downloadCertificate}>
-                <FontAwesomeIcon icon={faDownload} className="me-2" />
-                Download PDF
-              </Button>
+
+            <div className="cdp-status-row">
+              <span
+                className="cdp-status-badge"
+                style={{ background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}` }}
+              >
+                {statusStyle.label}
+              </span>
+              {cert.is_verified && (
+                <span className="cdp-verified-badge">✓ Verified</span>
+              )}
+            </div>
+
+            <h2 className="cdp-event-name">{cert.event_name}</h2>
+            <p className="cdp-issued-to">Issued to</p>
+            <h3 className="cdp-recipient">{cert.recipient_name}</h3>
+
+            {cert.recipient_email && (
+              <p className="cdp-email">{cert.recipient_email}</p>
+            )}
+
+            <div className="cdp-meta-grid">
+              {cert.participant_id && (
+                <div className="cdp-meta-item">
+                  <span>🪪</span>
+                  <div>
+                    <label>Participant ID</label>
+                    <strong>{cert.participant_id}</strong>
+                  </div>
+                </div>
+              )}
+              <div className="cdp-meta-item">
+                <span>📅</span>
+                <div>
+                  <label>Event Date</label>
+                  <strong>{cert.event_date || 'N/A'}</strong>
+                </div>
+              </div>
+              <div className="cdp-meta-item">
+                <span>🗓️</span>
+                <div>
+                  <label>Issued</label>
+                  <strong>{cert.issued_date ? new Date(cert.issued_date).toLocaleDateString() : 'N/A'}</strong>
+                </div>
+              </div>
+              {cert.event_creator && (
+                <div className="cdp-meta-item">
+                  <span>👤</span>
+                  <div>
+                    <label>Issued By</label>
+                    <strong>{cert.event_creator}</strong>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {cert.event_description && (
+              <div className="cdp-description">
+                <label>Event Description</label>
+                <p>{cert.event_description}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Right: Verification & Security */}
+          <div className="cdp-right-col">
+            {/* Verification Score */}
+            {cert.verification_score !== undefined && (
+              <div className="cdp-card cdp-score-card">
+                <h3>🔐 Verification Score</h3>
+                <div className="cdp-score-display">
+                  <div
+                    className="cdp-score-ring"
+                    style={{
+                      background: `conic-gradient(
+                        ${cert.verification_score >= 80 ? '#10b981' : cert.verification_score >= 60 ? '#f59e0b' : '#ef4444'} 
+                        ${cert.verification_score * 3.6}deg,
+                        rgba(255,255,255,0.1) 0deg
+                      )`
+                    }}
+                  >
+                    <span className="cdp-score-num">{cert.verification_score}</span>
+                  </div>
+                  <p className="cdp-score-label">
+                    {cert.verification_score >= 80 ? '✅ Highly Trusted' : cert.verification_score >= 60 ? '⚠️ Moderate Trust' : '❌ Low Trust'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Verification Checks */}
+            {cert.verification_details && (
+              <div className="cdp-card cdp-checks-card">
+                <h3>🔍 Security Checks</h3>
+                <div className="cdp-check-list">
+                  <div className="cdp-check-row">
+                    <span>Metadata Integrity</span>
+                    <Check val={cert.verification_details.metadata_integrity} />
+                  </div>
+                  <div className="cdp-check-row">
+                    <span>Hash Verification</span>
+                    <Check val={cert.verification_details.hash_verification} />
+                  </div>
+                  <div className="cdp-check-row">
+                    <span>Database Record</span>
+                    <Check val={cert.verification_details.database_match} />
+                  </div>
+                  <div className="cdp-check-row">
+                    <span>Blockchain Anchor</span>
+                    <Check val={cert.verification_details.blockchain_verification} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Blockchain Info */}
+            <div className="cdp-card cdp-blockchain-card">
+              <h3>🔗 Blockchain & Cryptography</h3>
+              {cert.blockchain_tx_hash ? (
+                <div className="cdp-blockchain-data">
+                  <div className="cdp-data-item">
+                    <label>Transaction Hash</label>
+                    <code>{cert.blockchain_tx_hash}</code>
+                  </div>
+                  <div className="cdp-blockchain-badge">
+                    ✓ Recorded on Ethereum Blockchain
+                  </div>
+                </div>
+              ) : (
+                <div className="cdp-no-blockchain">
+                  <span>○</span> Blockchain transaction pending
+                </div>
+              )}
+
+              {cert.sha256_hash && (
+                <div className="cdp-data-item" style={{ marginTop: '1rem' }}>
+                  <label>SHA-256 Hash</label>
+                  <code className="cdp-hash">{cert.sha256_hash}</code>
+                </div>
+              )}
             </div>
           </div>
-        </Col>
-      </Row>
-
-      <Row>
-        {/* Main Certificate Information */}
-        <Col lg={8}>
-          <Card className="mb-4">
-            <Card.Header>
-              <h5 className="mb-0">
-                <FontAwesomeIcon icon={faFileAlt} className="me-2" />
-                Certificate Information
-              </h5>
-            </Card.Header>
-            <Card.Body>
-              <Row>
-                <Col md={6}>
-                  <div className="mb-3">
-                    <label className="form-label text-muted">Recipient</label>
-                    <div className="d-flex align-items-center">
-                      <FontAwesomeIcon icon={faUser} className="me-2 text-primary" />
-                      <strong>{certificate.recipient_name}</strong>
-                    </div>
-                  </div>
-                  
-                  <div className="mb-3">
-                    <label className="form-label text-muted">Event</label>
-                    <div className="d-flex align-items-center">
-                      <FontAwesomeIcon icon={faCalendarAlt} className="me-2 text-primary" />
-                      <strong>{certificate.event_name}</strong>
-                    </div>
-                  </div>
-                  
-                  <div className="mb-3">
-                    <label className="form-label text-muted">Event Date</label>
-                    <div>{certificate.event_date}</div>
-                  </div>
-                </Col>
-                
-                <Col md={6}>
-                  <div className="mb-3">
-                    <label className="form-label text-muted">Status</label>
-                    <div>{getStatusBadge(certificate.status)}</div>
-                  </div>
-                  
-                  <div className="mb-3">
-                    <label className="form-label text-muted">Issued Date</label>
-                    <div>{certificate.issued_date}</div>
-                  </div>
-                  
-                  <div className="mb-3">
-                    <label className="form-label text-muted">Verification Status</label>
-                    <div>{getVerificationBadge(certificate.is_verified)}</div>
-                  </div>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
-
-          {/* Security Information */}
-          <Card className="mb-4">
-            <Card.Header>
-              <h5 className="mb-0">
-                <FontAwesomeIcon icon={faShieldAlt} className="me-2" />
-                Security & Verification
-                {validating && <Spinner animation="border" size="sm" className="ms-2" />}
-              </h5>
-            </Card.Header>
-            <Card.Body>
-              <div className="mb-3">
-                <label className="form-label text-muted">SHA-256 Hash</label>
-                <div className="font-monospace small text-break">
-                  <FontAwesomeIcon icon={faHashtag} className="me-2 text-primary" />
-                  {certificate.sha256_hash}
-                </div>
-              </div>
-              
-              {certificate.blockchain_tx_hash && (
-                <div className="mb-3">
-                  <label className="form-label text-muted">Blockchain Transaction</label>
-                  <div className="font-monospace small text-break">
-                    <FontAwesomeIcon icon={faLink} className="me-2 text-primary" />
-                    {certificate.blockchain_tx_hash}
-                  </div>
-                </div>
-              )}
-
-              {/* Validation Results */}
-              {certificate.validation_details && (
-                <div className="mt-4">
-                  <h6>Validation Results</h6>
-                  <Row>
-                    <Col sm={6}>
-                      <div className="mb-2">
-                        {certificate.validation_details.hash_match ? 
-                          <Badge bg="success"><FontAwesomeIcon icon={faCheckCircle} /> Hash Integrity</Badge> :
-                          <Badge bg="danger"><FontAwesomeIcon icon={faTimesCircle} /> Hash Mismatch</Badge>
-                        }
-                      </div>
-                      <div className="mb-2">
-                        {certificate.validation_details.pdf_integrity ? 
-                          <Badge bg="success"><FontAwesomeIcon icon={faCheckCircle} /> PDF Integrity</Badge> :
-                          <Badge bg="danger"><FontAwesomeIcon icon={faTimesCircle} /> PDF Tampered</Badge>
-                        }
-                      </div>
-                    </Col>
-                    <Col sm={6}>
-                      <div className="mb-2">
-                        {certificate.validation_details.blockchain_verified ? 
-                          <Badge bg="success"><FontAwesomeIcon icon={faCheckCircle} /> Blockchain Verified</Badge> :
-                          <Badge bg="warning"><FontAwesomeIcon icon={faExclamationTriangle} /> Not on Blockchain</Badge>
-                        }
-                      </div>
-                      <div className="mb-2">
-                        {certificate.validation_details.ocr_verified ? 
-                          <Badge bg="success"><FontAwesomeIcon icon={faCheckCircle} /> OCR Verified</Badge> :
-                          <Badge bg="warning"><FontAwesomeIcon icon={faExclamationTriangle} /> OCR Unverified</Badge>
-                        }
-                      </div>
-                    </Col>
-                  </Row>
-                </div>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
-
-        {/* QR Code and Actions */}
-        <Col lg={4}>
-          <Card>
-            <Card.Header>
-              <h5 className="mb-0">
-                <FontAwesomeIcon icon={faQrcode} className="me-2" />
-                Quick Actions
-              </h5>
-            </Card.Header>
-            <Card.Body className="text-center">
-              <div className="mb-4">
-                <Button 
-                  variant="outline-primary" 
-                  size="lg" 
-                  onClick={generateQRCode}
-                  disabled={!certificate.qr_code_data}
-                >
-                  <FontAwesomeIcon icon={faQrcode} className="me-2" />
-                  View QR Code
-                </Button>
-              </div>
-              
-              <div className="mb-3">
-                <Button 
-                  variant="success" 
-                  onClick={downloadCertificate}
-                  className="w-100"
-                >
-                  <FontAwesomeIcon icon={faDownload} className="me-2" />
-                  Download Certificate
-                </Button>
-              </div>
-              
-              <div className="mb-3">
-                <Button 
-                  variant="outline-info" 
-                  onClick={validateCertificate}
-                  disabled={validating}
-                  className="w-100"
-                >
-                  <FontAwesomeIcon icon={faShieldAlt} className="me-2" />
-                  {validating ? 'Validating...' : 'Re-validate'}
-                </Button>
-              </div>
-
-              {/* Share Options */}
-              <div className="mt-4 pt-3 border-top">
-                <small className="text-muted">Share this certificate</small>
-                <div className="mt-2">
-                  <Button variant="outline-secondary" size="sm" className="me-2">
-                    <FontAwesomeIcon icon={faLink} />
-                  </Button>
-                  <Button variant="outline-secondary" size="sm">
-                    <FontAwesomeIcon icon={faEye} />
-                  </Button>
-                </div>
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* QR Code Modal */}
-      <Modal show={showQRModal} onHide={() => setShowQRModal(false)} centered>
-        <Modal.Header closeButton>
-          <Modal.Title>
-            <FontAwesomeIcon icon={faQrcode} className="me-2" />
-            Certificate QR Code
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="text-center">
-          {qrCodeImage ? (
-            <div>
-              <div className="mb-3">
-                <div 
-                  style={{
-                    width: '200px',
-                    height: '200px',
-                    border: '2px solid #dee2e6',
-                    margin: '0 auto',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: '#f8f9fa'
-                  }}
-                >
-                  <FontAwesomeIcon icon={faQrcode} size="4x" className="text-muted" />
-                </div>
-              </div>
-              <p className="text-muted small">
-                Scan this QR code to verify the certificate
-              </p>
-              <div className="font-monospace small text-break bg-light p-2 rounded">
-                {qrCodeImage.substring(0, 100)}...
-              </div>
-            </div>
-          ) : (
-            <p>QR code not available</p>
-          )}
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowQRModal(false)}>
-            Close
-          </Button>
-        </Modal.Footer>
-      </Modal>
-    </Container>
+        </div>
+      </div>
+    </div>
   );
 };
 
