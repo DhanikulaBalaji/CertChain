@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { Container, Row, Col, Card, Button, Form, Alert, Modal, Badge, Table } from 'react-bootstrap';
+import React, { useRef, useState } from 'react';
+import { Modal } from 'react-bootstrap';
+import QRScannerEmbedded from '../components/QRScannerEmbedded';
 import { useAuth } from '../services/AuthContext';
 import api from '../services/api';
-import QRScannerEmbedded from '../components/QRScannerEmbedded';
+import './UserDashboard.css';
 
 interface CertificateVerification {
   certificate_id: string;
@@ -17,7 +18,6 @@ interface CertificateVerification {
   is_verified?: boolean;
   sha256_hash?: string;
   blockchain_tx_hash?: string;
-  metadata_match?: boolean;
   verification_score: number;
 }
 
@@ -33,13 +33,17 @@ interface VerificationResult {
     database_match: boolean;
     blockchain_verification: boolean;
   };
+  verification_status?: string;
+  ownership_pending?: boolean;
+  ownership_verified?: boolean;
+  challenge?: string;
+  claimed_to_wallet?: boolean;
 }
 
 const UserDashboard: React.FC = () => {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // States
+
   const [certificateId, setCertificateId] = useState('');
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,64 +52,51 @@ const UserDashboard: React.FC = () => {
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [activeVerificationMethod, setActiveVerificationMethod] = useState<'id' | 'qr' | 'upload'>('id');
+  const [activeMethod, setActiveMethod] = useState<'id' | 'qr' | 'upload'>('id');
+  const [completingOwnership, setCompletingOwnership] = useState(false);
+  const [ownershipResult, setOwnershipResult] = useState<{ success: boolean; verification_status?: string; message?: string } | null>(null);
+  const [claimingWallet, setClaimingWallet] = useState(false);
+  const [claimedToWallet, setClaimedToWallet] = useState(false);
 
-  // Certificate verification by ID
   const handleCertificateVerification = async () => {
-    if (!certificateId.trim()) {
-      setError('Please enter a certificate ID');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
+    if (!certificateId.trim()) { setError('Please enter a certificate ID'); return; }
+    setLoading(true); setError(''); setSuccess('');
     try {
       const response = await api.post('/certificates/verify-public', {
         certificate_id: certificateId.trim(),
         verification_type: 'id_lookup'
       });
-
       setVerificationResult(response.data);
+      setOwnershipResult(null);
+      setClaimedToWallet(!!response.data.claimed_to_wallet);
       setShowVerificationModal(true);
-
-      // If fraud detected, notify SuperAdmin
-      if (response.data.fraud_detected) {
-        await notifySuperAdminFraud(response.data);
-      }
-
+      if (response.data.fraud_detected) await notifySuperAdminFraud(response.data);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Certificate verification failed');
-      setVerificationResult({
-        success: false,
-        message: 'Certificate not found or verification failed'
-      });
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  // QR Code scanning verification
   const handleQRScan = (result: string) => {
+    setShowQRScanner(false);
+    setActiveMethod('qr');
     try {
-      // Try to parse QR code data
       const qrData = JSON.parse(result);
       if (qrData.certificate_id) {
         setCertificateId(qrData.certificate_id);
-        setActiveVerificationMethod('qr');
         verifyQRData(qrData);
+      } else {
+        setError('QR code does not contain a valid certificate ID');
       }
     } catch {
-      // If not JSON, assume it's just the certificate ID
-      setCertificateId(result);
-      setActiveVerificationMethod('qr');
-      verifyCertificateById(result);
+      if (result.startsWith('CERT-') || result.match(/^CERT-[A-Z0-9]+$/i)) {
+        setCertificateId(result);
+        verifyCertificateById(result);
+      } else {
+        setError('Invalid QR code format');
+      }
     }
-    setShowQRScanner(false);
   };
 
-  // Verify QR code data
   const verifyQRData = async (qrData: any) => {
     setLoading(true);
     try {
@@ -114,447 +105,452 @@ const UserDashboard: React.FC = () => {
         qr_metadata: qrData,
         verification_type: 'qr_scan'
       });
-
       setVerificationResult(response.data);
+      setOwnershipResult(null);
+      setClaimedToWallet(!!response.data.claimed_to_wallet);
       setShowVerificationModal(true);
-
-      if (response.data.fraud_detected) {
-        await notifySuperAdminFraud(response.data);
-      }
+      if (response.data.fraud_detected) await notifySuperAdminFraud(response.data);
     } catch (err: any) {
       setError('QR code verification failed');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  // Verify certificate by ID (for QR fallback)
   const verifyCertificateById = async (id: string) => {
     setLoading(true);
     try {
       const response = await api.post('/certificates/verify-public', {
         certificate_id: id,
-        verification_type: 'qr_id_fallback'
+        verification_type: 'id_lookup'
       });
-
       setVerificationResult(response.data);
+      setOwnershipResult(null);
+      setClaimedToWallet(!!response.data.claimed_to_wallet);
       setShowVerificationModal(true);
-    } catch (err: any) {
-      setError('Certificate verification failed');
-    } finally {
-      setLoading(false);
-    }
+    } catch { setError('Certificate verification failed'); }
+    finally { setLoading(false); }
   };
 
-  // File upload verification
+  const handleClaimCertificate = async () => {
+    if (!verificationResult?.certificate?.certificate_id) return;
+    setClaimingWallet(true);
+    try {
+      await api.post('/certificates/claim', { certificate_id: verificationResult.certificate.certificate_id });
+      setClaimedToWallet(true);
+      setSuccess('Certificate added to your wallet!');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Could not add certificate to wallet.');
+    } finally { setClaimingWallet(false); }
+  };
+
+  const handleCompleteOwnershipVerification = async () => {
+    if (!verificationResult?.certificate?.certificate_id || !verificationResult.challenge) return;
+    setCompletingOwnership(true);
+    setOwnershipResult(null);
+    try {
+      const response = await api.post('/certificates/complete-ownership-verification', {
+        certificate_id: verificationResult.certificate.certificate_id,
+        challenge: verificationResult.challenge
+      });
+      setOwnershipResult({ success: response.data.success, verification_status: response.data.verification_status, message: response.data.message });
+    } catch (err: any) {
+      setOwnershipResult({ success: false, message: err.response?.data?.detail || 'Ownership verification failed' });
+    } finally { setCompletingOwnership(false); }
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    // Validate file type
     const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-    if (!allowedTypes.includes(file.type)) {
-      setError('Please upload a PDF, JPG, or PNG file');
-      return;
-    }
-
+    if (!allowedTypes.includes(file.type)) { setError('Please upload a PDF, JPG, or PNG file'); return; }
     setUploadedFile(file);
-    setActiveVerificationMethod('upload');
+    setActiveMethod('upload');
     await verifyUploadedFile(file);
   };
 
-  // Verify uploaded file
   const verifyUploadedFile = async (file: File) => {
-    setLoading(true);
-    setError('');
-
+    setLoading(true); setError('');
     const formData = new FormData();
     formData.append('file', file);
     formData.append('verification_type', 'file_upload');
-
     try {
       const response = await api.post('/certificates/verify-file-public', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-
       setVerificationResult(response.data);
+      setOwnershipResult(null);
+      setClaimedToWallet(!!response.data.claimed_to_wallet);
       setShowVerificationModal(true);
-
-      if (response.data.fraud_detected) {
-        await notifySuperAdminFraud(response.data);
-      }
+      if (response.data.fraud_detected) await notifySuperAdminFraud(response.data);
     } catch (err: any) {
       setError('File verification failed: ' + (err.response?.data?.detail || 'Unknown error'));
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  // Download certificate
-  const handleDownloadCertificate = async (certificateId: string) => {
+  const handleDownloadCertificate = async (certId: string) => {
     try {
       setLoading(true);
-      setError('');
-      
-      // Use the existing certificates API endpoint with proper path
-      const response = await api.get(`/certificates/download/${certificateId}`, {
+      const response = await api.get(`/certificates/download/${certId}`, {
         responseType: 'blob',
-        timeout: 30000 // 30 second timeout for downloads
+        timeout: 30000
       });
-
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `certificate_${certificateId}.pdf`);
+      link.setAttribute('download', `certificate_${certId}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-
       setSuccess('Certificate downloaded successfully');
     } catch (err: any) {
-      console.error('Download error:', err);
-      if (err.code === 'ECONNABORTED') {
-        setError('Download timeout - please try again');
-      } else if (err.response?.status === 404) {
-        setError('Certificate file not found');
-      } else if (err.response?.status === 403) {
-        setError('You do not have permission to download this certificate');
-      } else {
-        setError('Failed to download certificate: ' + (err.response?.data?.detail || err.message || 'Unknown error'));
-      }
-    } finally {
-      setLoading(false);
-    }
+      setError('Failed to download certificate: ' + (err.response?.data?.detail || err.message));
+    } finally { setLoading(false); }
   };
 
-  // Notify SuperAdmin about fraud
   const notifySuperAdminFraud = async (fraudData: VerificationResult) => {
     try {
       await api.post('/admin/fraud-alert', {
         certificate_id: fraudData.certificate?.certificate_id,
         fraud_indicators: fraudData.fraud_indicators,
-        detection_method: activeVerificationMethod,
+        detection_method: activeMethod,
         detected_by: user?.email,
-        verification_details: fraudData.verification_details
       });
-    } catch (err) {
-      console.error('Failed to notify SuperAdmin about fraud:', err);
-    }
+    } catch { /* silent */ }
   };
 
-  // Reset form
   const resetForm = () => {
     setCertificateId('');
     setVerificationResult(null);
     setUploadedFile(null);
     setError('');
     setSuccess('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Get verification score color
   const getScoreColor = (score: number) => {
-    if (score >= 90) return 'success';
-    if (score >= 70) return 'warning';
-    return 'danger';
+    if (score >= 80) return '#10b981';
+    if (score >= 60) return '#f59e0b';
+    return '#ef4444';
   };
+
+  const getCheckIcon = (val: boolean) => val
+    ? <span className="ud-check-pass">✓</span>
+    : <span className="ud-check-fail">✗</span>;
 
   return (
-    <Container fluid className="py-4">
-      <Row>
-        <Col lg={12}>
-          <Card className="shadow-sm">
-            <Card.Header className="bg-primary text-white">
-              <h4 className="mb-0">
-                <i className="fas fa-shield-alt me-2"></i>
-                Certificate Verification & Fraud Detection
-              </h4>
-              <small>Verify certificates, detect fraud, and ensure authenticity</small>
-            </Card.Header>
-            <Card.Body>
-              {error && <Alert variant="danger" dismissible onClose={() => setError('')}>{error}</Alert>}
-              {success && <Alert variant="success" dismissible onClose={() => setSuccess('')}>{success}</Alert>}
+    <div className="ud-page">
+      {/* Hero Banner */}
+      <div className="ud-hero">
+        <div className="ud-hero-content">
+          <div className="ud-hero-icon">🛡️</div>
+          <div>
+            <h1 className="ud-hero-title">Certificate Verification</h1>
+            <p className="ud-hero-subtitle">
+              Welcome back, <strong>{user?.full_name || user?.email}</strong> — verify certificates using ID, QR code, or file upload
+            </p>
+          </div>
+        </div>
+        <div className="ud-hero-badge">
+          <span>🔗 Blockchain Secured</span>
+        </div>
+      </div>
 
-              {/* Verification Methods */}
-              <Row className="mb-4">
-                <Col md={4}>
-                  <Card className={`h-100 ${activeVerificationMethod === 'id' ? 'border-primary' : ''}`}>
-                    <Card.Body className="text-center">
-                      <i className="fas fa-id-card fa-3x text-primary mb-3"></i>
-                      <h5>Certificate ID Verification</h5>
-                      <p className="text-muted">Enter certificate ID to verify authenticity</p>
-                      <Form.Group className="mb-3">
-                        <Form.Control
-                          type="text"
-                          placeholder="Enter Certificate ID (e.g., CERT-ABC123456789)"
-                          value={certificateId}
-                          onChange={(e) => setCertificateId(e.target.value)}
-                          onFocus={() => setActiveVerificationMethod('id')}
-                        />
-                      </Form.Group>
-                      <Button 
-                        variant="primary" 
-                        onClick={handleCertificateVerification}
-                        disabled={loading || !certificateId.trim()}
-                        className="w-100"
-                      >
-                        {loading && activeVerificationMethod === 'id' ? (
-                          <>
-                            <span className="spinner-border spinner-border-sm me-2"></span>
-                            Verifying...
-                          </>
-                        ) : (
-                          <>
-                            <i className="fas fa-search me-2"></i>
-                            Verify Certificate
-                          </>
-                        )}
-                      </Button>
-                    </Card.Body>
-                  </Card>
-                </Col>
+      <div className="ud-container">
+        {error && (
+          <div className="ud-alert ud-alert-error">
+            <span>⚠️</span> {error}
+            <button className="ud-alert-close" onClick={() => setError('')}>×</button>
+          </div>
+        )}
+        {success && (
+          <div className="ud-alert ud-alert-success">
+            <span>✅</span> {success}
+            <button className="ud-alert-close" onClick={() => setSuccess('')}>×</button>
+          </div>
+        )}
 
-                <Col md={4}>
-                  <Card className={`h-100 ${activeVerificationMethod === 'qr' ? 'border-success' : ''}`}>
-                    <Card.Body className="text-center">
-                      <i className="fas fa-qrcode fa-3x text-success mb-3"></i>
-                      <h5>QR Code Scanning</h5>
-                      <p className="text-muted">Scan QR code from certificate for instant verification</p>
-                      <Button 
-                        variant="success" 
-                        onClick={() => setShowQRScanner(true)}
-                        disabled={loading}
-                        className="w-100"
-                      >
-                        <i className="fas fa-camera me-2"></i>
-                        Scan QR Code
-                      </Button>
-                    </Card.Body>
-                  </Card>
-                </Col>
+        {/* Verification Method Cards */}
+        <div className="ud-methods-grid">
+          {/* Certificate ID */}
+          <div className={`ud-method-card ${activeMethod === 'id' ? 'ud-method-active' : ''}`}
+            onClick={() => setActiveMethod('id')}>
+            <div className="ud-method-icon ud-method-icon-blue">🪪</div>
+            <h3 className="ud-method-title">Certificate ID</h3>
+            <p className="ud-method-desc">Enter certificate ID to verify authenticity instantly</p>
+            {activeMethod === 'id' && (
+              <div className="ud-method-form" onClick={e => e.stopPropagation()}>
+                <input
+                  className="ud-input"
+                  type="text"
+                  placeholder="e.g. CERT-ABC123456789"
+                  value={certificateId}
+                  onChange={e => setCertificateId(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleCertificateVerification()}
+                />
+                <button
+                  className="ud-btn ud-btn-primary"
+                  onClick={handleCertificateVerification}
+                  disabled={loading || !certificateId.trim()}
+                >
+                  {loading ? <span className="ud-spinner" /> : '🔍'} Verify
+                </button>
+              </div>
+            )}
+          </div>
 
-                <Col md={4}>
-                  <Card className={`h-100 ${activeVerificationMethod === 'upload' ? 'border-warning' : ''}`}>
-                    <Card.Body className="text-center">
-                      <i className="fas fa-upload fa-3x text-warning mb-3"></i>
-                      <h5>File Upload Verification</h5>
-                      <p className="text-muted">Upload PDF/JPG certificate for metadata analysis</p>
-                      <Form.Group>
-                        <Form.Control
-                          type="file"
-                          ref={fileInputRef}
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          onChange={handleFileUpload}
-                          disabled={loading}
-                          className="mb-2"
-                        />
-                      </Form.Group>
-                      {uploadedFile && (
-                        <Badge bg="info" className="mb-2">
-                          {uploadedFile.name}
-                        </Badge>
-                      )}
-                    </Card.Body>
-                  </Card>
-                </Col>
-              </Row>
+          {/* QR Code */}
+          <div className={`ud-method-card ${activeMethod === 'qr' ? 'ud-method-active' : ''}`}
+            onClick={() => { setActiveMethod('qr'); setShowQRScanner(true); }}>
+            <div className="ud-method-icon ud-method-icon-green">📱</div>
+            <h3 className="ud-method-title">QR Code Scan</h3>
+            <p className="ud-method-desc">Scan the QR code on a certificate for instant verification</p>
+            {activeMethod === 'qr' && (
+              <div className="ud-method-form" onClick={e => e.stopPropagation()}>
+                <button
+                  className="ud-btn ud-btn-success"
+                  onClick={() => setShowQRScanner(true)}
+                  disabled={loading}
+                >
+                  📷 Open Scanner
+                </button>
+                {loading && <div className="ud-spinner-wrap"><span className="ud-spinner" /> Verifying...</div>}
+              </div>
+            )}
+          </div>
 
-              {/* Quick Actions */}
-              <Row className="mb-3">
-                <Col>
-                  <div className="d-flex gap-2 justify-content-center">
-                    <Button variant="outline-secondary" onClick={resetForm}>
-                      <i className="fas fa-refresh me-2"></i>
-                      Reset Form
-                    </Button>
-                  </div>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+          {/* File Upload */}
+          <div className={`ud-method-card ${activeMethod === 'upload' ? 'ud-method-active' : ''}`}
+            onClick={() => { setActiveMethod('upload'); }}>
+            <div className="ud-method-icon ud-method-icon-purple">📄</div>
+            <h3 className="ud-method-title">Upload Certificate</h3>
+            <p className="ud-method-desc">Upload PDF/image for blockchain & metadata verification</p>
+            {activeMethod === 'upload' && (
+              <div className="ud-method-form" onClick={e => e.stopPropagation()}>
+                <label className="ud-file-label">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={handleFileUpload}
+                    disabled={loading}
+                    className="ud-file-input"
+                  />
+                  <span>📂 Choose File</span>
+                </label>
+                {uploadedFile && <p className="ud-file-name">{uploadedFile.name}</p>}
+                {loading && <div className="ud-spinner-wrap"><span className="ud-spinner" /> Analyzing...</div>}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="ud-actions-bar">
+          <button className="ud-btn ud-btn-ghost" onClick={resetForm}>↺ Reset</button>
+        </div>
+      </div>
 
       {/* QR Scanner Modal */}
-      <Modal show={showQRScanner} onHide={() => setShowQRScanner(false)} centered>
-        <Modal.Header closeButton>
-          <Modal.Title>Scan Certificate QR Code</Modal.Title>
+      <Modal show={showQRScanner} onHide={() => setShowQRScanner(false)} centered className="ud-modal">
+        <Modal.Header closeButton className="ud-modal-header">
+          <Modal.Title>📱 Scan Certificate QR Code</Modal.Title>
         </Modal.Header>
-        <Modal.Body>
+        <Modal.Body className="ud-modal-body">
           <QRScannerEmbedded onScan={handleQRScan} />
         </Modal.Body>
       </Modal>
 
       {/* Verification Results Modal */}
-      <Modal show={showVerificationModal} onHide={() => setShowVerificationModal(false)} size="lg" centered>
-        <Modal.Header closeButton>
+      <Modal
+        show={showVerificationModal}
+        onHide={() => { setShowVerificationModal(false); setOwnershipResult(null); setClaimedToWallet(false); }}
+        size="lg"
+        centered
+        className="ud-modal"
+      >
+        <Modal.Header closeButton className="ud-modal-header">
           <Modal.Title>
-            <i className={`fas ${verificationResult?.success ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-danger'} me-2`}></i>
-            Certificate Verification Results
+            {verificationResult?.success ? '✅' : '❌'} Certificate Verification Results
           </Modal.Title>
         </Modal.Header>
-        <Modal.Body>
+        <Modal.Body className="ud-modal-body">
           {verificationResult && (
-            <>
-              {/* Verification Status */}
-              <Row className="mb-4">
-                <Col>
-                  <Card className={`border-${verificationResult.success ? 'success' : 'danger'}`}>
-                    <Card.Body className="text-center">
-                      <h4 className={`text-${verificationResult.success ? 'success' : 'danger'}`}>
-                        {verificationResult.success ? 'Certificate Verified' : 'Verification Failed'}
-                      </h4>
-                      <p className="mb-0">{verificationResult.message}</p>
-                      
-                      {verificationResult.certificate?.verification_score && (
-                        <div className="mt-3">
-                          <Badge bg={getScoreColor(verificationResult.certificate.verification_score)} className="fs-6">
-                            Verification Score: {verificationResult.certificate.verification_score}%
-                          </Badge>
-                        </div>
-                      )}
-                    </Card.Body>
-                  </Card>
-                </Col>
-              </Row>
+            <div className="ud-result">
+              {/* Status Banner */}
+              <div className={`ud-result-banner ${verificationResult.success ? 'ud-banner-success' : 'ud-banner-danger'}`}>
+                <div className="ud-banner-icon">
+                  {verificationResult.success ? '🔐' : '⚠️'}
+                </div>
+                <div>
+                  <h3>{verificationResult.success ? 'Certificate Verified' : 'Verification Failed'}</h3>
+                  <p>{verificationResult.message}</p>
+                </div>
+                {verificationResult.certificate?.verification_score !== undefined && (
+                  <div className="ud-score-circle" style={{ borderColor: getScoreColor(verificationResult.certificate.verification_score) }}>
+                    <span style={{ color: getScoreColor(verificationResult.certificate.verification_score) }}>
+                      {verificationResult.certificate.verification_score}
+                    </span>
+                    <small>Score</small>
+                  </div>
+                )}
+              </div>
+
+              {/* Verification Status Badge */}
+              {verificationResult.verification_status && (
+                <div className="ud-status-badge">
+                  <span className={`ud-badge ${verificationResult.ownership_verified ? 'ud-badge-success' : verificationResult.ownership_pending ? 'ud-badge-warning' : 'ud-badge-info'}`}>
+                    🔑 {verificationResult.verification_status}
+                  </span>
+                </div>
+              )}
 
               {/* Certificate Details */}
               {verificationResult.certificate && (
-                <Row className="mb-4">
-                  <Col md={6}>
-                    <Card>
-                      <Card.Header>
-                        <h6 className="mb-0">Certificate Information</h6>
-                      </Card.Header>
-                      <Card.Body>
-                        <Table borderless size="sm">
-                          <tbody>
-                            <tr>
-                              <td><strong>Certificate ID:</strong></td>
-                              <td><code>{verificationResult.certificate.certificate_id}</code></td>
-                            </tr>
-                            <tr>
-                              <td><strong>Recipient:</strong></td>
-                              <td>{verificationResult.certificate.recipient_name}</td>
-                            </tr>
-                            <tr>
-                              <td><strong>Event:</strong></td>
-                              <td>{verificationResult.certificate.event_name}</td>
-                            </tr>
-                            <tr>
-                              <td><strong>Issued Date:</strong></td>
-                              <td>{new Date(verificationResult.certificate.issued_date).toLocaleDateString()}</td>
-                            </tr>
-                            {verificationResult.certificate.event_creator && (
-                              <tr>
-                                <td><strong>Issued By:</strong></td>
-                                <td>{verificationResult.certificate.event_creator}</td>
-                              </tr>
-                            )}
-                            <tr>
-                              <td><strong>Status:</strong></td>
-                              <td>
-                                <Badge bg={verificationResult.certificate.status === 'active' ? 'success' : 'danger'}>
-                                  {verificationResult.certificate.status}
-                                </Badge>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </Table>
-                      </Card.Body>
-                    </Card>
-                  </Col>
-                  
-                  <Col md={6}>
-                    <Card>
-                      <Card.Header>
-                        <h6 className="mb-0">Verification Details</h6>
-                      </Card.Header>
-                      <Card.Body>
-                        {verificationResult.verification_details && (
-                          <Table borderless size="sm">
-                            <tbody>
-                              <tr>
-                                <td><strong>Metadata Integrity:</strong></td>
-                                <td>
-                                  <Badge bg={verificationResult.verification_details.metadata_integrity ? 'success' : 'danger'}>
-                                    {verificationResult.verification_details.metadata_integrity ? 'Valid' : 'Invalid'}
-                                  </Badge>
-                                </td>
-                              </tr>
-                              <tr>
-                                <td><strong>Hash Verification:</strong></td>
-                                <td>
-                                  <Badge bg={verificationResult.verification_details.hash_verification ? 'success' : 'danger'}>
-                                    {verificationResult.verification_details.hash_verification ? 'Valid' : 'Invalid'}
-                                  </Badge>
-                                </td>
-                              </tr>
-                              <tr>
-                                <td><strong>Database Match:</strong></td>
-                                <td>
-                                  <Badge bg={verificationResult.verification_details.database_match ? 'success' : 'danger'}>
-                                    {verificationResult.verification_details.database_match ? 'Match' : 'No Match'}
-                                  </Badge>
-                                </td>
-                              </tr>
-                              <tr>
-                                <td><strong>Blockchain:</strong></td>
-                                <td>
-                                  <Badge bg={verificationResult.verification_details.blockchain_verification ? 'success' : 'warning'}>
-                                    {verificationResult.verification_details.blockchain_verification ? 'Verified' : 'Pending'}
-                                  </Badge>
-                                </td>
-                              </tr>
-                            </tbody>
-                          </Table>
-                        )}
-                      </Card.Body>
-                    </Card>
-                  </Col>
-                </Row>
+                <div className="ud-cert-grid">
+                  <div className="ud-cert-section">
+                    <h4 className="ud-section-title">📋 Certificate Info</h4>
+                    <div className="ud-info-table">
+                      <div className="ud-info-row">
+                        <span className="ud-info-label">Certificate ID</span>
+                        <code className="ud-info-value">{verificationResult.certificate.certificate_id}</code>
+                      </div>
+                      <div className="ud-info-row">
+                        <span className="ud-info-label">Recipient</span>
+                        <span className="ud-info-value">{verificationResult.certificate.recipient_name}</span>
+                      </div>
+                      <div className="ud-info-row">
+                        <span className="ud-info-label">Event</span>
+                        <span className="ud-info-value">{verificationResult.certificate.event_name}</span>
+                      </div>
+                      {verificationResult.certificate.event_date && (
+                        <div className="ud-info-row">
+                          <span className="ud-info-label">Event Date</span>
+                          <span className="ud-info-value">{verificationResult.certificate.event_date}</span>
+                        </div>
+                      )}
+                      <div className="ud-info-row">
+                        <span className="ud-info-label">Issued</span>
+                        <span className="ud-info-value">
+                          {verificationResult.certificate.issued_date
+                            ? new Date(verificationResult.certificate.issued_date).toLocaleDateString()
+                            : 'N/A'}
+                        </span>
+                      </div>
+                      {verificationResult.certificate.event_creator && (
+                        <div className="ud-info-row">
+                          <span className="ud-info-label">Issued By</span>
+                          <span className="ud-info-value">{verificationResult.certificate.event_creator}</span>
+                        </div>
+                      )}
+                      <div className="ud-info-row">
+                        <span className="ud-info-label">Status</span>
+                        <span className={`ud-status-chip ${verificationResult.certificate.status === 'active' ? 'chip-active' : 'chip-revoked'}`}>
+                          {verificationResult.certificate.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="ud-cert-section">
+                    <h4 className="ud-section-title">🔍 Verification Checks</h4>
+                    {verificationResult.verification_details && (
+                      <div className="ud-checks-list">
+                        <div className="ud-check-item">
+                          {getCheckIcon(verificationResult.verification_details.metadata_integrity)}
+                          <span>Metadata Integrity</span>
+                        </div>
+                        <div className="ud-check-item">
+                          {getCheckIcon(verificationResult.verification_details.hash_verification)}
+                          <span>SHA-256 Hash Match</span>
+                        </div>
+                        <div className="ud-check-item">
+                          {getCheckIcon(verificationResult.verification_details.database_match)}
+                          <span>Database Record Match</span>
+                        </div>
+                        <div className="ud-check-item">
+                          {getCheckIcon(verificationResult.verification_details.blockchain_verification)}
+                          <span>Blockchain Anchored</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {verificationResult.certificate.blockchain_tx_hash && (
+                      <div className="ud-blockchain-info">
+                        <h5>🔗 Blockchain Transaction</h5>
+                        <code className="ud-tx-hash">{verificationResult.certificate.blockchain_tx_hash}</code>
+                      </div>
+                    )}
+
+                    {verificationResult.certificate.sha256_hash && (
+                      <div className="ud-blockchain-info">
+                        <h5># SHA-256 Hash</h5>
+                        <code className="ud-tx-hash">{verificationResult.certificate.sha256_hash.substring(0, 32)}...</code>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
 
-              {/* Fraud Detection */}
-              {verificationResult.fraud_detected && (
-                <Row className="mb-4">
-                  <Col>
-                    <Alert variant="danger">
-                      <h6><i className="fas fa-exclamation-triangle me-2"></i>Fraud Detected!</h6>
-                      <p>This certificate has been flagged as potentially fraudulent. SuperAdmin has been notified.</p>
-                      {verificationResult.fraud_indicators && (
-                        <ul className="mb-0">
-                          {verificationResult.fraud_indicators.map((indicator, index) => (
-                            <li key={index}>{indicator}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </Alert>
-                  </Col>
-                </Row>
+              {/* DID Ownership Verification */}
+              {verificationResult.success && verificationResult.certificate && (verificationResult.ownership_pending || ownershipResult) && (
+                <div className="ud-did-section">
+                  <h4 className="ud-section-title">🪪 DID Ownership Verification</h4>
+                  <p className="ud-did-desc">Prove you are the certificate owner using your Decentralized Identity (DID)</p>
+                  {ownershipResult ? (
+                    <div className={`ud-ownership-result ${ownershipResult.success ? 'ownership-success' : 'ownership-fail'}`}>
+                      <strong>{ownershipResult.verification_status || (ownershipResult.success ? '✅ Ownership Verified' : '❌ Failed')}</strong>
+                      {ownershipResult.message && <p>{ownershipResult.message}</p>}
+                    </div>
+                  ) : verificationResult.ownership_pending && verificationResult.challenge ? (
+                    <button
+                      className="ud-btn ud-btn-info"
+                      onClick={handleCompleteOwnershipVerification}
+                      disabled={completingOwnership}
+                    >
+                      {completingOwnership ? <><span className="ud-spinner" /> Verifying...</> : '🔑 Verify DID Ownership'}
+                    </button>
+                  ) : null}
+                </div>
               )}
-            </>
+
+              {/* Fraud Alert */}
+              {verificationResult.fraud_detected && (
+                <div className="ud-fraud-alert">
+                  <h4>⚠️ Fraud Detected!</h4>
+                  <p>This certificate has been flagged as potentially fraudulent. SuperAdmin has been notified.</p>
+                  {verificationResult.fraud_indicators && (
+                    <ul>
+                      {verificationResult.fraud_indicators.map((ind, i) => <li key={i}>{ind}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </Modal.Body>
-        <Modal.Footer>
+        <Modal.Footer className="ud-modal-footer">
           {verificationResult?.success && verificationResult.certificate && (
-            <Button 
-              variant="primary" 
-              onClick={() => handleDownloadCertificate(verificationResult.certificate!.certificate_id)}
-            >
-              <i className="fas fa-download me-2"></i>
-              Download Certificate
-            </Button>
+            <>
+              {claimedToWallet ? (
+                <span className="ud-wallet-badge">✅ In your wallet</span>
+              ) : (
+                <button className="ud-btn ud-btn-outline-success" onClick={handleClaimCertificate} disabled={claimingWallet}>
+                  {claimingWallet ? <><span className="ud-spinner" /> Adding...</> : '💼 Add to Wallet'}
+                </button>
+              )}
+              <button
+                className="ud-btn ud-btn-primary"
+                onClick={() => handleDownloadCertificate(verificationResult.certificate!.certificate_id)}
+              >
+                ⬇️ Download PDF
+              </button>
+            </>
           )}
-          <Button variant="secondary" onClick={() => setShowVerificationModal(false)}>
+          <button className="ud-btn ud-btn-ghost" onClick={() => { setShowVerificationModal(false); setOwnershipResult(null); setClaimedToWallet(false); }}>
             Close
-          </Button>
+          </button>
         </Modal.Footer>
       </Modal>
-    </Container>
+    </div>
   );
 };
 

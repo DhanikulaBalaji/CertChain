@@ -29,6 +29,15 @@ def generate_participant_id():
     """Generate a random participant ID"""
     return f"PART-{random.randint(1000, 9999)}"
 
+
+def _resolve_recipient_user_id(db: Session, email: Optional[str], recipient_id_or_email: Optional[str]) -> Optional[int]:
+    """Resolve a registered user's id by email so certificates can be linked to user wallet."""
+    email_to_use = email or (recipient_id_or_email if recipient_id_or_email and "@" in str(recipient_id_or_email) else None)
+    if not email_to_use:
+        return None
+    user = db.query(UserModel).filter(UserModel.email == email_to_use.strip()).first()
+    return user.id if user else None
+
 def generate_certificate_id():
     """Generate a unique certificate ID"""
     return f"CERT-{''.join(random.choices(string.ascii_uppercase + string.digits, k=12))}"
@@ -173,22 +182,43 @@ async def get_user_certificates(
     limit: int = 100,
     offset: int = 0
 ):
-    """Get certificates for the current user (only for events they participated in)"""
+    """Get certificates for the current user (wallet: issued to them by recipient_id or participant match)"""
     try:
-        # Find certificates for events where the user was a participant
-        certificates = db.query(CertificateModel).join(
+        # Auto-link any certificates that match user's email but don't have recipient_id set
+        if current_user.email:
+            unlinked = db.query(CertificateModel).filter(
+                CertificateModel.recipient_email == current_user.email,
+                CertificateModel.recipient_id.is_(None)
+            ).all()
+            for cert in unlinked:
+                cert.recipient_id = current_user.id
+            if unlinked:
+                db.commit()
+
+        # 1) Certificates issued to this user (recipient_id = current user) - stored in wallet
+        by_recipient_id = db.query(CertificateModel).filter(
+            CertificateModel.recipient_id == current_user.id
+        ).all()
+        # 2) Certificates for events where the user was a participant (name/email match)
+        by_participant = db.query(CertificateModel).join(
             EventModel, CertificateModel.event_id == EventModel.id
         ).join(
             EventParticipantModel, EventModel.id == EventParticipantModel.event_id
         ).filter(
-            # User was a participant in the event
             EventParticipantModel.participant_email == current_user.email,
-            # Certificate recipient matches participant
-            (CertificateModel.recipient_name == current_user.full_name) |
-            (CertificateModel.recipient_name == current_user.email) |
-            (CertificateModel.recipient_name == EventParticipantModel.participant_name)
-        ).offset(offset).limit(limit).all()
-        
+            (CertificateModel.recipient_name == current_user.full_name)
+            | (CertificateModel.recipient_name == current_user.email)
+            | (CertificateModel.recipient_name == EventParticipantModel.participant_name)
+        ).all()
+        # Union by certificate id to avoid duplicates
+        seen_ids = set()
+        certificates = []
+        for cert in by_recipient_id + by_participant:
+            if cert.id not in seen_ids:
+                seen_ids.add(cert.id)
+                certificates.append(cert)
+        certificates = certificates[offset : offset + limit]
+
         result = []
         for cert in certificates:
             event_name = cert.event.name if cert.event else "Unknown Event"
@@ -369,16 +399,23 @@ async def generate_single_certificate(
                 detail="Certificate generation failed"
             )
         
-        # Store in database
+        # Resolve recipient user so certificate appears in user wallet
+        recipient_email = getattr(certificate_data, "recipient_email", None) or (
+            certificate_data.recipient_id if certificate_data.recipient_id and "@" in str(certificate_data.recipient_id) else None
+        )
+        recipient_user_id = _resolve_recipient_user_id(db, recipient_email, certificate_data.recipient_id)
+
+        # Store in database (recipient_id links cert to user wallet)
         new_certificate = CertificateModel(
             certificate_id=generated_cert['certificate_id'],
             recipient_name=certificate_data.recipient_name,
-            participant_id=participant_id,  # Store the participant ID
-            recipient_id=None,  # Set to None since this is not a user reference
+            participant_id=participant_id,
+            recipient_id=recipient_user_id,
+            recipient_email=recipient_email,
             event_id=certificate_data.event_id,
             pdf_path=generated_cert['pdf_path'],
             qr_code_path=generated_cert['qr_code_path'],
-            qr_code_data=generated_cert.get('qr_code_data'),  # Store QR code data
+            qr_code_data=generated_cert.get('qr_code_data'),
             blockchain_tx_hash=generated_cert.get('blockchain_tx'),
             sha256_hash=generated_cert.get('hash'),
             status=CertificateStatus.ACTIVE
@@ -389,11 +426,11 @@ async def generate_single_certificate(
         db.refresh(new_certificate)
         
         # Send notification to user (if email is provided)
-        if certificate_data.recipient_id:  # Assuming this is an email or user identifier
+        if certificate_data.recipient_id or recipient_email:
             notification_service = NotificationService(db)
             await notification_service.send_certificate_notification(
                 new_certificate.id,
-                certificate_data.recipient_id
+                recipient_email or certificate_data.recipient_id or ""
             )
         
         return Response(
@@ -514,17 +551,19 @@ async def generate_bulk_certificates(
                 generated_cert = certificate_generator.generate_single_certificate(cert_gen_data)
                 
                 if generated_cert:
-                    # Store in database
+                    # Resolve recipient user so certificate appears in user wallet
+                    recipient_user_id = _resolve_recipient_user_id(db, recipient.get('email'), None)
+                    # Store in database (recipient_id links cert to user wallet)
                     new_certificate = CertificateModel(
                         certificate_id=generated_cert['certificate_id'],
                         recipient_name=recipient['recipient_name'],
                         participant_id=recipient['participant_id'],
-                        recipient_email=recipient['email'],
-                        recipient_id=None,  # Set to None since this is not a user reference
+                        recipient_email=recipient.get('email'),
+                        recipient_id=recipient_user_id,
                         event_id=event_id,
                         pdf_path=generated_cert['pdf_path'],
                         qr_code_path=generated_cert['qr_code_path'],
-                        qr_code_data=generated_cert.get('qr_code_data'),  # Store QR code data
+                        qr_code_data=generated_cert.get('qr_code_data'),
                         blockchain_tx_hash=generated_cert.get('blockchain_tx'),
                         sha256_hash=generated_cert.get('hash'),
                         status=CertificateStatus.ACTIVE
@@ -700,69 +739,106 @@ async def validate_certificate(
     validation_request: ValidationRequest,
     db: Session = Depends(get_db)
 ):
-    """Validate certificate authenticity"""
+    """Validate certificate authenticity (admin portal)."""
+    from app.models.schemas import ValidationStatus as ValidationStatusEnum
+
     try:
-        # Get certificate from database
-        certificate = db.query(CertificateModel).filter(
-            CertificateModel.certificate_id == validation_request.certificate_id
-        ).first()
-        
-        if not certificate:
+        now = datetime.utcnow()
+        if not validation_request.certificate_id and not validation_request.qr_code_data:
             return ValidationResult(
-                is_valid=False,
-                message="Certificate not found",
-                details={}
+                status=ValidationStatusEnum.NOT_FOUND,
+                certificate=None,
+                details={"message": "Certificate ID or QR code data is required"},
+                timestamp=now,
+                validation_timestamp=now,
+                message="Certificate ID or QR code data is required",
             )
-        
+
+        # Build validation_data dict (validator expects dict, not keyword args)
+        validation_data = {}
+        if validation_request.certificate_id:
+            validation_data["certificate_id"] = validation_request.certificate_id
+        if validation_request.qr_code_data:
+            validation_data["qr_code_data"] = validation_request.qr_code_data
+
+        # Validate using certificate validator service (hash comes from DB inside validator)
+        validation_result = certificate_validator.validate_certificate(validation_data)
+
+        # Get certificate from database for response
+        certificate = None
+        if validation_request.certificate_id:
+            certificate = db.query(CertificateModel).filter(
+                CertificateModel.certificate_id == validation_request.certificate_id
+            ).first()
+
+        if not certificate:
+            msg = validation_result.get("message", "Certificate not found")
+            return ValidationResult(
+                status=ValidationStatusEnum.NOT_FOUND,
+                certificate=None,
+                details={"message": msg},
+                timestamp=now,
+                validation_timestamp=now,
+                message=msg,
+            )
+
         # Check certificate status
         if certificate.status != CertificateStatus.ACTIVE:
+            msg = f"Certificate is {certificate.status}"
             return ValidationResult(
-                is_valid=False,
-                message=f"Certificate is {certificate.status}",
-                details={"status": certificate.status}
+                status=ValidationStatusEnum.SUSPICIOUS,
+                certificate=None,
+                details={"message": msg, "status": str(certificate.status)},
+                timestamp=now,
+                validation_timestamp=now,
+                message=msg,
             )
-        
-        # Validate using certificate validator service
-        validation_result = await certificate_validator.validate_certificate(
-            certificate_id=validation_request.certificate_id,
-            expected_hash=validation_request.expected_hash
-        )
-        
-        # Check for tampering
-        tampering_result = await tamper_detection_service.check_certificate_integrity(
-            certificate.pdf_path,
-            certificate.blockchain_hash
-        )
-        
-        if not tampering_result['is_valid']:
-            return ValidationResult(
-                is_valid=False,
-                message="Certificate has been tampered with",
-                details=tampering_result
-            )
-        
+
+        issued_at_str = certificate.issued_at.strftime("%Y-%m-%d %H:%M:%S") if certificate.issued_at else None
+        event_name = certificate.event.name if certificate.event else None
+        details = {
+            "recipient_name": certificate.recipient_name,
+            "event_id": certificate.event_id,
+            "event_name": event_name,
+            "issued_at": issued_at_str,
+            "issue_date": issued_at_str,
+            "blockchain_tx_hash": certificate.blockchain_tx_hash,
+            "blockchain_verified": bool(certificate.blockchain_tx_hash),
+            "status": str(certificate.status),
+            "message": validation_result.get("message", ""),
+            "checks": validation_result.get("checks", {}),
+        }
+
+        # Map validator status string to enum
+        status_str = validation_result.get("status", "valid")
+        if status_str == "valid":
+            status_enum = ValidationStatusEnum.VALID
+        elif status_str == "tampered":
+            status_enum = ValidationStatusEnum.TAMPERED
+        elif status_str == "suspicious":
+            status_enum = ValidationStatusEnum.SUSPICIOUS
+        else:
+            status_enum = ValidationStatusEnum.SUSPICIOUS
+
         return ValidationResult(
-            is_valid=validation_result['is_valid'],
-            message=validation_result['message'],
-            details={
-                "recipient_name": certificate.recipient_name,
-                "event_id": certificate.event_id,
-                "issued_at": certificate.issued_at.strftime('%Y-%m-%d %H:%M:%S') if certificate.issued_at else None,
-                "blockchain_hash": certificate.blockchain_hash,
-                "status": certificate.status
-            }
+            status=status_enum,
+            certificate=certificate,
+            details=details,
+            timestamp=now,
+            validation_timestamp=now,
+            message=validation_result.get("message", ""),
+            certificate_id=certificate.certificate_id,
         )
-        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Validation failed: {str(e)}"
+            detail=f"Validation failed: {str(e)}",
         )
 
 @router.post("/{certificate_id}/revoke", response_model=Response)
 async def revoke_certificate(
     certificate_id: str,
-    reason: str = Form(...),
+    reason: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_admin)
 ):
@@ -788,7 +864,7 @@ async def revoke_certificate(
         # Update certificate status and revocation details
         certificate.status = CertificateStatus.REVOKED
         certificate.revoked_by = current_user.id
-        certificate.revocation_reason = reason
+        certificate.revocation_reason = reason or "Revoked by administrator"
         certificate.revoked_at = datetime.utcnow()
         
         db.commit()

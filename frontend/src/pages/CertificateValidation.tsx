@@ -1,577 +1,401 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Container, Row, Col, Card, Button, Form, Alert, Badge, Spinner, Table, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../services/AuthContext';
 import api from '../services/api';
 import jsQR from 'jsqr';
+import './CertificateValidation.css';
+
+interface ValidationDetails {
+  recipient_name?: string;
+  event_name?: string;
+  issue_date?: string;
+  issued_at?: string;
+  blockchain_verified?: boolean;
+  hash_match?: boolean;
+  checks?: Record<string, boolean>;
+  status?: string;
+  message?: string;
+  revocation_reason?: string;
+}
 
 interface ValidationResult {
-  certificate_id: string;
-  status: 'valid' | 'invalid' | 'revoked' | 'tampered' | 'not_found' | 'suspicious';
-  message: string;
-  details: {
-    recipient_name?: string;
-    event_name?: string;
-    issue_date?: string;
-    blockchain_verified?: boolean;
-    pdf_integrity?: boolean;
-    ocr_verified?: boolean;
-    hash_match?: boolean;
-    revocation_reason?: string;
-    tamper_details?: string;
-  };
-  validation_timestamp: string;
+  certificate_id?: string;
+  status: 'VALID' | 'TAMPERED' | 'SUSPICIOUS' | 'NOT_FOUND' | 'valid' | 'tampered' | 'suspicious' | 'not_found';
+  message?: string;
+  details?: ValidationDetails;
+  validation_timestamp?: string;
+  timestamp?: string;
 }
 
 const CertificateValidation: React.FC = () => {
   const { token } = useAuth();
   const navigate = useNavigate();
-  const [validationMethod, setValidationMethod] = useState<'manual' | 'qr' | 'upload'>('manual');
-  const [certificateId, setCertificateId] = useState('');
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [method, setMethod] = useState<'id' | 'qr' | 'file'>('id');
+  const [certId, setCertId] = useState('');
+  const [result, setResult] = useState<ValidationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [qrScanActive, setQRScanActive] = useState(false);
-  const [showDetailsModal, setShowDetailsModal] = useState(false);
-  
+  const [qrActive, setQrActive] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const validateCertificate = async (certId: string) => {
-    if (!certId.trim()) {
-      setError('Please enter a certificate ID');
-      return;
-    }
+  const normalize = (s: string) => (s || '').toLowerCase();
 
-    setError(null);
-    setLoading(true);
-
+  const validate = async (id: string) => {
+    if (!id.trim()) { setError('Please enter a certificate ID'); return; }
+    setError(null); setLoading(true);
     try {
-      const response = await api.post('/certificates/validate', {
-        certificate_id: certId.trim()
-      }, {
+      const response = await api.post('/certificates/validate', { certificate_id: id.trim() }, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
-
-      setValidationResult(response.data);
+      setResult(response.data);
+      setStep(3);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Validation failed');
-      console.error('Validation error:', err);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  const validateUploadedFile = async (file: File) => {
-    setError(null);
-    setLoading(true);
-
+  const validateFile = async (file: File) => {
+    setError(null); setLoading(true);
+    const formData = new FormData();
+    formData.append('file', file);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await api.post('/certificates/validate-file', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          ...(token && { Authorization: `Bearer ${token}` })
-        }
+      const response = await api.post('/certificates/verify-file-public', formData, {
+        headers: { 'Content-Type': 'multipart/form-data', ...(token && { Authorization: `Bearer ${token}` }) }
       });
-
-      setValidationResult(response.data);
+      setResult(response.data);
+      setStep(3);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'File validation failed');
-      console.error('File validation error:', err);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  const handleManualValidation = (e: React.FormEvent) => {
-    e.preventDefault();
-    validateCertificate(certificateId);
-  };
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (file.type !== 'application/pdf') {
-      setError('Please select a PDF file');
-      return;
-    }
-
-    setUploadedFile(file);
-    validateUploadedFile(file);
-  };
-
-  const startQRScan = useCallback(async () => {
+  const startQR = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
-        setQRScanActive(true);
+        setQrActive(true);
         setError(null);
       }
-    } catch (err) {
-      setError('Camera access denied or not available');
-      console.error('Camera error:', err);
-    }
+    } catch { setError('Camera access denied or not available'); }
   }, []);
 
-  const stopQRScan = useCallback(() => {
+  const stopQR = useCallback(() => {
     if (videoRef.current?.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      const tracks = stream.getTracks();
-      tracks.forEach(track => track.stop());
+      (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
       videoRef.current.srcObject = null;
     }
-    setQRScanActive(false);
+    setQrActive(false);
   }, []);
 
-  const scanQRCode = useCallback(() => {
+  const scanQR = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
-
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    const context = canvas.getContext('2d');
-
-    if (!context) return;
-
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    
-    // Use jsQR to scan for QR codes
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const code = jsQR(imageData.data, imageData.width, imageData.height);
-    
     if (code) {
+      stopQR();
+      let foundId = '';
       try {
-        // Try to parse QR code data as JSON or extract certificate ID
-        let certificateId = '';
-        
-        if (code.data.startsWith('CERT-') || code.data.match(/^[A-Z0-9-]+$/)) {
-          // Direct certificate ID
-          certificateId = code.data;
-        } else {
-          // Try to parse as JSON
-          const qrData = JSON.parse(code.data);
-          certificateId = qrData.certificate_id || qrData.id || '';
-        }
-        
-        if (certificateId) {
-          stopQRScan();
-          setCertificateId(certificateId);
-          validateCertificate(certificateId);
-          setError(null);
-        } else {
-          setError('QR code does not contain a valid certificate ID');
-        }
-      } catch (e) {
-        setError('Invalid QR code format');
+        const parsed = JSON.parse(code.data);
+        foundId = parsed.certificate_id || parsed.id || '';
+      } catch {
+        if (code.data.startsWith('CERT-')) foundId = code.data;
+      }
+      if (foundId) {
+        setCertId(foundId);
+        validate(foundId);
+      } else {
+        setError('QR code does not contain a valid certificate ID');
       }
     }
-  }, [stopQRScan, validateCertificate]);
+  }, [stopQR]);
 
-  // Start scanning when QR mode is activated
   React.useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-    
-    if (qrScanActive) {
-      intervalId = setInterval(scanQRCode, 500);
-    }
+    let interval: NodeJS.Timeout;
+    if (qrActive) interval = setInterval(scanQR, 400);
+    return () => { if (interval) clearInterval(interval); };
+  }, [qrActive, scanQR]);
 
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [qrScanActive, scanQRCode]);
-
-  const getStatusVariant = (status: ValidationResult['status']) => {
-    switch (status) {
-      case 'valid': return 'success';
-      case 'invalid': return 'danger';
-      case 'revoked': return 'warning';
-      case 'tampered': return 'danger';
-      case 'suspicious': return 'warning';
-      case 'not_found': return 'secondary';
-      default: return 'secondary';
-    }
-  };
-
-  const getStatusIcon = (status: ValidationResult['status']) => {
-    switch (status) {
-      case 'valid': return 'fas fa-check-circle';
-      case 'invalid': return 'fas fa-times-circle';
-      case 'revoked': return 'fas fa-ban';
-      case 'tampered': return 'fas fa-exclamation-triangle';
-      case 'suspicious': return 'fas fa-question-circle';
-      case 'not_found': return 'fas fa-search';
-      default: return 'fas fa-info-circle';
-    }
+  const getStatusInfo = (status: string) => {
+    const s = normalize(status);
+    if (s === 'valid') return { icon: '✅', label: 'Valid', color: '#10b981', bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.4)' };
+    if (s === 'tampered') return { icon: '⚠️', label: 'Tampered', color: '#ef4444', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.4)' };
+    if (s === 'suspicious') return { icon: '🔍', label: 'Suspicious', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.4)' };
+    if (s === 'not_found') return { icon: '❓', label: 'Not Found', color: '#94a3b8', bg: 'rgba(148,163,184,0.15)', border: 'rgba(148,163,184,0.3)' };
+    return { icon: '❓', label: status, color: '#94a3b8', bg: 'rgba(148,163,184,0.15)', border: 'rgba(148,163,184,0.3)' };
   };
 
   return (
-    <Container className="mt-4">
-      <Row>
-        <Col>
-          <h2>
-            <i className="fas fa-shield-alt me-2"></i>
-            Certificate Validation
-          </h2>
-          <p className="text-muted">Verify the authenticity and integrity of certificates</p>
-        </Col>
-      </Row>
+    <div className="cv-page">
+      <div className="cv-hero">
+        <div className="cv-hero-icon">🔐</div>
+        <div>
+          <h1 className="cv-hero-title">Certificate Validation</h1>
+          <p className="cv-hero-sub">Verify authenticity, integrity, and blockchain status of any certificate</p>
+        </div>
+      </div>
 
-      {error && <Alert variant="danger" dismissible onClose={() => setError(null)}>{error}</Alert>}
+      <div className="cv-container">
+        {/* Progress Steps */}
+        <div className="cv-steps">
+          {[
+            { n: 1, label: 'Choose Method' },
+            { n: 2, label: 'Enter Details' },
+            { n: 3, label: 'View Results' },
+          ].map(s => (
+            <div key={s.n} className={`cv-step ${step >= s.n ? 'cv-step-active' : ''} ${step === s.n ? 'cv-step-current' : ''}`}>
+              <div className="cv-step-circle">{step > s.n ? '✓' : s.n}</div>
+              <span className="cv-step-label">{s.label}</span>
+            </div>
+          ))}
+          <div className="cv-step-line" />
+        </div>
 
-      {/* Validation Method Selection */}
-      <Row className="mb-4">
-        <Col>
-          <Card>
-            <Card.Header>
-              <h5>Choose Validation Method</h5>
-            </Card.Header>
-            <Card.Body>
-              <div className="d-flex gap-2 flex-wrap">
-                <Button
-                  variant={validationMethod === 'manual' ? 'primary' : 'outline-primary'}
-                  onClick={() => {
-                    setValidationMethod('manual');
-                    if (qrScanActive) stopQRScan();
-                  }}
+        {error && (
+          <div className="cv-error">
+            ⚠️ {error}
+            <button onClick={() => setError(null)}>×</button>
+          </div>
+        )}
+
+        {/* Step 1 & 2: Method Selection + Input */}
+        {step < 3 && (
+          <div className="cv-card">
+            <h2 className="cv-card-title">Select Validation Method</h2>
+
+            <div className="cv-method-tabs">
+              {[
+                { id: 'id', icon: '🪪', label: 'Certificate ID' },
+                { id: 'qr', icon: '📱', label: 'QR Code Scan' },
+                { id: 'file', icon: '📄', label: 'Upload PDF' },
+              ].map(m => (
+                <button
+                  key={m.id}
+                  className={`cv-method-tab ${method === m.id ? 'cv-tab-active' : ''}`}
+                  onClick={() => { setMethod(m.id as any); setStep(2); if (qrActive) stopQR(); }}
                 >
-                  <i className="fas fa-keyboard me-2"></i>Manual Entry
-                </Button>
-                <Button
-                  variant={validationMethod === 'qr' ? 'primary' : 'outline-primary'}
-                  onClick={() => {
-                    setValidationMethod('qr');
-                    if (!qrScanActive) startQRScan();
-                  }}
-                >
-                  <i className="fas fa-qrcode me-2"></i>QR Code Scan
-                </Button>
-                <Button
-                  variant={validationMethod === 'upload' ? 'primary' : 'outline-primary'}
-                  onClick={() => {
-                    setValidationMethod('upload');
-                    if (qrScanActive) stopQRScan();
-                  }}
-                >
-                  <i className="fas fa-file-upload me-2"></i>Upload PDF
-                </Button>
+                  <span className="cv-tab-icon">{m.icon}</span>
+                  <span>{m.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Manual ID */}
+            {method === 'id' && (
+              <div className="cv-input-section">
+                <label className="cv-label">Certificate ID</label>
+                <div className="cv-input-row">
+                  <input
+                    className="cv-input"
+                    type="text"
+                    value={certId}
+                    onChange={e => setCertId(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && validate(certId)}
+                    placeholder="Enter Certificate ID (e.g. CERT-ABC123456789)"
+                  />
+                  <button
+                    className="cv-btn cv-btn-primary"
+                    onClick={() => { setStep(2); validate(certId); }}
+                    disabled={loading || !certId.trim()}
+                  >
+                    {loading ? <><span className="cv-spinner" /> Validating...</> : '🔍 Validate'}
+                  </button>
+                </div>
+                <p className="cv-hint">Enter the unique certificate ID printed on the certificate</p>
               </div>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+            )}
 
-      <Row>
-        <Col md={6}>
-          {/* Manual Entry */}
-          {validationMethod === 'manual' && (
-            <Card>
-              <Card.Header>
-                <h5><i className="fas fa-keyboard me-2"></i>Manual Certificate ID Entry</h5>
-              </Card.Header>
-              <Card.Body>
-                <Form onSubmit={handleManualValidation}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Certificate ID</Form.Label>
-                    <Form.Control
-                      type="text"
-                      value={certificateId}
-                      onChange={(e) => setCertificateId(e.target.value)}
-                      placeholder="Enter certificate ID (e.g., CERT-2024-001234)"
-                      required
-                    />
-                    <Form.Text className="text-muted">
-                      Enter the unique certificate ID found on your certificate
-                    </Form.Text>
-                  </Form.Group>
-                  
-                  <Button type="submit" variant="primary" disabled={loading || !certificateId.trim()}>
-                    {loading ? (
-                      <>
-                        <Spinner size="sm" animation="border" className="me-2" />
-                        Validating...
-                      </>
-                    ) : (
-                      <>
-                        <i className="fas fa-search me-2"></i>Validate Certificate
-                      </>
-                    )}
-                  </Button>
-                </Form>
-              </Card.Body>
-            </Card>
-          )}
+            {/* QR Scanner */}
+            {method === 'qr' && (
+              <div className="cv-input-section">
+                <div className="cv-qr-wrapper">
+                  <video
+                    ref={videoRef}
+                    className="cv-qr-video"
+                    style={{ display: qrActive ? 'block' : 'none' }}
+                    playsInline muted
+                  />
+                  {!qrActive && (
+                    <div className="cv-qr-placeholder">
+                      <span className="cv-qr-icon">📷</span>
+                      <p>Camera will activate when you start scanning</p>
+                    </div>
+                  )}
+                  {qrActive && <div className="cv-qr-overlay" />}
+                  <canvas ref={canvasRef} style={{ display: 'none' }} />
+                </div>
+                <div className="cv-qr-actions">
+                  {!qrActive ? (
+                    <button className="cv-btn cv-btn-success" onClick={startQR}>📷 Start Camera</button>
+                  ) : (
+                    <button className="cv-btn cv-btn-danger" onClick={stopQR}>⏹ Stop Camera</button>
+                  )}
+                </div>
+                <div className="cv-info-box">
+                  📌 Point your camera at the QR code on the certificate. Scanning happens automatically.
+                </div>
+                {loading && <div className="cv-loading-bar"><div className="cv-loading-fill" /></div>}
+              </div>
+            )}
 
-          {/* QR Code Scanning */}
-          {validationMethod === 'qr' && (
-            <Card>
-              <Card.Header>
-                <h5><i className="fas fa-qrcode me-2"></i>QR Code Scanner</h5>
-              </Card.Header>
-              <Card.Body>
-                <div className="text-center mb-3">
-                  <div className="position-relative d-inline-block">
-                    <video
-                      ref={videoRef}
-                      style={{
-                        width: '100%',
-                        maxWidth: '400px',
-                        height: 'auto',
-                        border: '2px solid #dee2e6',
-                        borderRadius: '8px'
-                      }}
-                      playsInline
-                      muted
-                    />
-                    {!qrScanActive && (
-                      <div className="position-absolute top-50 start-50 translate-middle">
-                        <i className="fas fa-camera fa-3x text-muted"></i>
+            {/* File Upload */}
+            {method === 'file' && (
+              <div className="cv-input-section">
+                <div
+                  className="cv-dropzone"
+                  onClick={() => fileRef.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files[0];
+                    if (f) { setUploadedFile(f); validateFile(f); }
+                  }}
+                >
+                  <span className="cv-dropzone-icon">📤</span>
+                  <p className="cv-dropzone-title">{uploadedFile ? uploadedFile.name : 'Drop PDF certificate here'}</p>
+                  <p className="cv-dropzone-sub">or click to browse — supports PDF, JPG, PNG</p>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    style={{ display: 'none' }}
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f) { setUploadedFile(f); validateFile(f); }
+                    }}
+                  />
+                </div>
+                {loading && (
+                  <div className="cv-processing">
+                    <span className="cv-spinner" /> Analyzing certificate...
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 3: Results */}
+        {step === 3 && result && (() => {
+          const si = getStatusInfo(result.status);
+          const details = result.details || {};
+          const ts = result.validation_timestamp || result.timestamp;
+          return (
+            <div className="cv-result-wrapper">
+              {/* Status Card */}
+              <div className="cv-result-card" style={{ background: si.bg, borderColor: si.border }}>
+                <div className="cv-result-header">
+                  <span className="cv-result-icon">{si.icon}</span>
+                  <div>
+                    <h2 className="cv-result-title" style={{ color: si.color }}>
+                      Certificate {si.label}
+                    </h2>
+                    <p className="cv-result-message">{result.message || details.message}</p>
+                  </div>
+                  <div className="cv-result-id">
+                    <span>Certificate ID</span>
+                    <code>{result.certificate_id}</code>
+                  </div>
+                </div>
+                {ts && (
+                  <p className="cv-result-time">
+                    🕐 Validated: {new Date(ts).toLocaleString()}
+                  </p>
+                )}
+              </div>
+
+              {/* Details Grid */}
+              {details && Object.keys(details).length > 0 && (
+                <div className="cv-details-grid">
+                  {/* Certificate Info */}
+                  {(details.recipient_name || details.event_name) && (
+                    <div className="cv-detail-section">
+                      <h3 className="cv-detail-title">📋 Certificate Details</h3>
+                      {details.recipient_name && (
+                        <div className="cv-detail-row">
+                          <span>Recipient</span>
+                          <strong>{details.recipient_name}</strong>
+                        </div>
+                      )}
+                      {details.event_name && (
+                        <div className="cv-detail-row">
+                          <span>Event</span>
+                          <strong>{details.event_name}</strong>
+                        </div>
+                      )}
+                      {(details.issue_date || details.issued_at) && (
+                        <div className="cv-detail-row">
+                          <span>Issue Date</span>
+                          <strong>{new Date(details.issue_date || details.issued_at || '').toLocaleDateString()}</strong>
+                        </div>
+                      )}
+                      {details.status && (
+                        <div className="cv-detail-row">
+                          <span>Status</span>
+                          <strong style={{ textTransform: 'capitalize' }}>{details.status}</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Verification Checks */}
+                  <div className="cv-detail-section">
+                    <h3 className="cv-detail-title">🔍 Verification Checks</h3>
+                    <div className="cv-checks">
+                      <div className={`cv-check ${details.blockchain_verified ? 'check-pass' : 'check-warn'}`}>
+                        <span>{details.blockchain_verified ? '✓' : '○'}</span>
+                        Blockchain Verified
+                      </div>
+                      <div className={`cv-check ${details.hash_match !== false ? 'check-pass' : 'check-fail'}`}>
+                        <span>{details.hash_match !== false ? '✓' : '✗'}</span>
+                        Hash Integrity
+                      </div>
+                      {details.checks && Object.entries(details.checks).map(([k, v]) => (
+                        <div key={k} className={`cv-check ${v ? 'check-pass' : 'check-fail'}`}>
+                          <span>{v ? '✓' : '✗'}</span>
+                          {k.replace(/_/g, ' ')}
+                        </div>
+                      ))}
+                    </div>
+
+                    {details.revocation_reason && (
+                      <div className="cv-revoke-reason">
+                        <strong>Revocation Reason:</strong> {details.revocation_reason}
                       </div>
                     )}
                   </div>
-                  <canvas ref={canvasRef} style={{ display: 'none' }} />
                 </div>
-                
-                <div className="d-flex gap-2 justify-content-center">
-                  {!qrScanActive ? (
-                    <Button variant="primary" onClick={startQRScan}>
-                      <i className="fas fa-camera me-2"></i>Start Camera
-                    </Button>
-                  ) : (
-                    <Button variant="danger" onClick={stopQRScan}>
-                      <i className="fas fa-stop me-2"></i>Stop Camera
-                    </Button>
-                  )}
-                </div>
-                
-                <Alert variant="info" className="mt-3">
-                  <i className="fas fa-info-circle me-2"></i>
-                  Point your camera at the QR code on the certificate to scan and validate automatically.
-                </Alert>
-              </Card.Body>
-            </Card>
-          )}
+              )}
 
-          {/* File Upload */}
-          {validationMethod === 'upload' && (
-            <Card>
-              <Card.Header>
-                <h5><i className="fas fa-file-upload me-2"></i>Upload PDF Certificate</h5>
-              </Card.Header>
-              <Card.Body>
-                <Form.Group className="mb-3">
-                  <Form.Label>Select PDF Certificate</Form.Label>
-                  <Form.Control
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/pdf,.pdf"
-                    onChange={handleFileUpload}
-                  />
-                  <Form.Text className="text-muted">
-                    Upload the PDF certificate file for validation
-                  </Form.Text>
-                </Form.Group>
-                
-                {uploadedFile && (
-                  <Alert variant="info">
-                    <i className="fas fa-file-pdf me-2"></i>
-                    Selected: {uploadedFile.name}
-                  </Alert>
+              {/* Actions */}
+              <div className="cv-result-actions">
+                <button className="cv-btn cv-btn-ghost" onClick={() => { setStep(1); setResult(null); setCertId(''); setUploadedFile(null); setError(null); }}>
+                  ← Validate Another
+                </button>
+                {normalize(result.status) === 'valid' && result.certificate_id && (
+                  <button className="cv-btn cv-btn-primary" onClick={() => navigate(`/certificate/${result.certificate_id}`)}>
+                    📋 View Full Details
+                  </button>
                 )}
-                
-                {loading && (
-                  <div className="text-center">
-                    <Spinner animation="border" />
-                    <p className="mt-2">Processing PDF file...</p>
-                  </div>
-                )}
-              </Card.Body>
-            </Card>
-          )}
-        </Col>
-
-        {/* Validation Result */}
-        <Col md={6}>
-          {validationResult && (
-            <Card>
-              <Card.Header className="d-flex justify-content-between align-items-center">
-                <h5><i className="fas fa-clipboard-check me-2"></i>Validation Result</h5>
-                <Badge bg={getStatusVariant(validationResult.status)} className="fs-6">
-                  <i className={`${getStatusIcon(validationResult.status)} me-1`}></i>
-                  {validationResult.status.toUpperCase()}
-                </Badge>
-              </Card.Header>
-              <Card.Body>
-                <div className="mb-3">
-                  <h6>Certificate ID: {validationResult.certificate_id}</h6>
-                  <p className="mb-2">{validationResult.message}</p>
-                  <small className="text-muted">
-                    Validated on: {new Date(validationResult.validation_timestamp).toLocaleString()}
-                  </small>
-                </div>
-
-                {validationResult.details && Object.keys(validationResult.details).length > 0 && (
-                  <>
-                    <div className="d-flex gap-2 mb-3">
-                      <Button 
-                        variant="outline-primary" 
-                        size="sm"
-                        onClick={() => setShowDetailsModal(true)}
-                      >
-                        <i className="fas fa-info-circle me-2"></i>View Details
-                      </Button>
-                      {validationResult.status === 'valid' && (
-                        <Button 
-                          variant="primary" 
-                          size="sm"
-                          onClick={() => navigate(`/certificate/${validationResult.certificate_id}`)}
-                        >
-                          <i className="fas fa-certificate me-2"></i>Full Certificate Details
-                        </Button>
-                      )}
-                    </div>
-                    
-                    <div className="mt-3">
-                      <h6>Quick Summary:</h6>
-                      <Table size="sm" responsive>
-                        <tbody>
-                          {validationResult.details.recipient_name && (
-                            <tr>
-                              <td><strong>Recipient:</strong></td>
-                              <td>{validationResult.details.recipient_name}</td>
-                            </tr>
-                          )}
-                          {validationResult.details.event_name && (
-                            <tr>
-                              <td><strong>Event:</strong></td>
-                              <td>{validationResult.details.event_name}</td>
-                            </tr>
-                          )}
-                          {validationResult.details.issue_date && (
-                            <tr>
-                              <td><strong>Issue Date:</strong></td>
-                              <td>{new Date(validationResult.details.issue_date).toLocaleDateString()}</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </Table>
-                    </div>
-                  </>
-                )}
-
-                {/* Action buttons based on status */}
-                <div className="mt-3">
-                  {validationResult.status === 'valid' && (
-                    <Alert variant="success">
-                      <i className="fas fa-check-circle me-2"></i>
-                      This certificate is authentic and has not been tampered with.
-                    </Alert>
-                  )}
-                  
-                  {validationResult.status === 'tampered' && (
-                    <Alert variant="danger">
-                      <i className="fas fa-exclamation-triangle me-2"></i>
-                      Warning: This certificate appears to have been modified or tampered with.
-                    </Alert>
-                  )}
-                  
-                  {validationResult.status === 'revoked' && (
-                    <Alert variant="warning">
-                      <i className="fas fa-ban me-2"></i>
-                      This certificate has been revoked and is no longer valid.
-                      {validationResult.details.revocation_reason && (
-                        <div className="mt-2">
-                          <strong>Reason:</strong> {validationResult.details.revocation_reason}
-                        </div>
-                      )}
-                    </Alert>
-                  )}
-                  
-                  {validationResult.status === 'not_found' && (
-                    <Alert variant="secondary">
-                      <i className="fas fa-search me-2"></i>
-                      Certificate not found in our database. Please check the certificate ID.
-                    </Alert>
-                  )}
-                </div>
-              </Card.Body>
-            </Card>
-          )}
-        </Col>
-      </Row>
-
-      {/* Validation Details Modal */}
-      <Modal show={showDetailsModal} onHide={() => setShowDetailsModal(false)} size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title>Detailed Validation Report</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          {validationResult?.details && (
-            <Table striped bordered hover>
-              <thead>
-                <tr>
-                  <th>Validation Check</th>
-                  <th>Status</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Blockchain Verification</td>
-                  <td>
-                    <Badge bg={validationResult.details.blockchain_verified ? 'success' : 'danger'}>
-                      {validationResult.details.blockchain_verified ? 'PASSED' : 'FAILED'}
-                    </Badge>
-                  </td>
-                  <td>Certificate hash verified on blockchain</td>
-                </tr>
-                <tr>
-                  <td>PDF Integrity</td>
-                  <td>
-                    <Badge bg={validationResult.details.pdf_integrity ? 'success' : 'danger'}>
-                      {validationResult.details.pdf_integrity ? 'PASSED' : 'FAILED'}
-                    </Badge>
-                  </td>
-                  <td>PDF structure and content integrity</td>
-                </tr>
-                <tr>
-                  <td>OCR Verification</td>
-                  <td>
-                    <Badge bg={validationResult.details.ocr_verified ? 'success' : 'danger'}>
-                      {validationResult.details.ocr_verified ? 'PASSED' : 'FAILED'}
-                    </Badge>
-                  </td>
-                  <td>Text content matches original data</td>
-                </tr>
-                <tr>
-                  <td>Hash Match</td>
-                  <td>
-                    <Badge bg={validationResult.details.hash_match ? 'success' : 'danger'}>
-                      {validationResult.details.hash_match ? 'PASSED' : 'FAILED'}
-                    </Badge>
-                  </td>
-                  <td>SHA-256 hash verification</td>
-                </tr>
-              </tbody>
-            </Table>
-          )}
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowDetailsModal(false)}>
-            Close
-          </Button>
-        </Modal.Footer>
-      </Modal>
-    </Container>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+    </div>
   );
 };
 

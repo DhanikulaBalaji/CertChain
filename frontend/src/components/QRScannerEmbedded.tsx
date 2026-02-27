@@ -35,38 +35,14 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
     }
   };
   
-  // Extract certificate ID from QR code data
-  const extractCertificateId = (qrData: string): string | null => {
-    try {
-      // Handle different QR code formats
-      if (qrData.startsWith('CERT-')) {
-        return qrData;
-      }
-      
-      // If it's a URL, extract the certificate ID from query parameters
-      if (qrData.includes('certificate_id=')) {
-        const url = new URL(qrData);
-        return url.searchParams.get('certificate_id');
-      }
-      
-      // Try to parse as JSON if it contains certificate data
-      if (qrData.includes('{') && qrData.includes('}')) {
-        const data = JSON.parse(qrData);
-        return data.certificate_id || data.certificateId || null;
-      }
-      
-      // If it's just the certificate ID
-      if (qrData.match(/^CERT-[A-F0-9]+$/)) {
-        return qrData;
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('Error parsing QR code data:', error);
-      return null;
-    }
+  // Validate that QR data contains a certificate reference
+  const isValidCertQR = (qrData: string): boolean => {
+    if (qrData.startsWith('CERT-')) return true;
+    if (qrData.includes('certificate_id')) return true;
+    if (qrData.match(/^CERT-[A-Z0-9]+$/i)) return true;
+    return false;
   };
-  
+
   // Scan QR code from camera
   const scanQRFromCamera = () => {
     if (!videoRef.current || !canvasRef.current) {
@@ -85,10 +61,8 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
       return;
     }
     
-    // Update scan count for debugging
     setScanCount(prev => prev + 1);
     
-    // Set canvas size to match video
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     
@@ -96,29 +70,23 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
       return;
     }
     
-    // Draw video frame to canvas
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // Get image data for QR scanning
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
     
-    // Scan for QR code
     const code = jsQR(imageData.data, imageData.width, imageData.height);
     
     if (code) {
       console.log('🎯 QR Code detected! Raw data:', code.data);
-      
-      // Trigger vibration feedback for QR detection
       triggerVibration();
       
-      const certificateId = extractCertificateId(code.data);
-      if (certificateId) {
-        console.log('✅ Certificate ID extracted:', certificateId);
-        onScan(certificateId);
+      if (isValidCertQR(code.data)) {
+        // Pass the full raw QR data string to parent - parent will handle parsing
+        onScan(code.data);
         stopCamera();
       } else {
-        console.log('❌ QR Code found but no valid certificate ID:', code.data);
-        setError('QR code does not contain a valid certificate ID: ' + code.data);
+        console.log('❌ QR Code found but not a certificate QR:', code.data);
+        setError('QR code does not appear to be a certificate QR code.');
       }
     }
   };
@@ -229,16 +197,13 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
             
             if (code) {
               console.log('🎯 QR Code found in uploaded image:', code.data);
-              
-              // Trigger vibration feedback for QR detection
               triggerVibration();
               
-              const certificateId = extractCertificateId(code.data);
-              if (certificateId) {
-                console.log('✅ Certificate ID extracted from image:', certificateId);
-                onScan(certificateId);
+              if (isValidCertQR(code.data)) {
+                console.log('✅ Certificate QR found in image:', code.data);
+                onScan(code.data);
               } else {
-                setError('QR code found but does not contain a valid certificate ID');
+                setError('QR code found but does not appear to be a certificate QR code');
               }
             } else {
               setError('No QR code found in the uploaded image');
@@ -264,14 +229,15 @@ const QRScannerEmbedded: React.FC<QRScannerEmbeddedProps> = ({
 
   // Manual test scan function (for testing purposes)
   const testScanQR = () => {
-    // Use a real certificate ID that exists in the database
-    const testCertificateId = "CERT-0F2A92DFA52A"; // Alice Johnson's certificate
-    console.log('Manual test scan triggered with certificate ID:', testCertificateId);
-    
-    // Trigger vibration feedback for test scan
+    const testQRData = JSON.stringify({
+      certificate_id: "CERT-TEST000001",
+      recipient_name: "Test User",
+      event_name: "Test Event",
+      timestamp: new Date().toISOString()
+    });
+    console.log('Manual test scan triggered:', testQRData);
     triggerVibration();
-    
-    onScan(testCertificateId);
+    onScan(testQRData);
     stopCamera();
   };
 
