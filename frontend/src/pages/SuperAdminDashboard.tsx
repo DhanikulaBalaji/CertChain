@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Container, Row, Col, Card, Button, Table, Badge, Alert, Tab, Tabs, Form, Modal } from 'react-bootstrap';
+import { faLock, faTrashAlt, faUsers } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Badge, Button, Card, Col, Container, Form, Modal, Row, Tab, Table, Tabs } from 'react-bootstrap';
+import CertificateTemplateGenerator from '../components/CertificateTemplateGenerator';
+import EventParticipantModal from '../components/EventParticipantModal';
 import { useAuth } from '../services/AuthContext';
 import api, { eventsAPI } from '../services/api';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faTrashAlt, faLock, faUsers } from '@fortawesome/free-solid-svg-icons';
-import EventParticipantModal from '../components/EventParticipantModal';
-import CertificateTemplateGenerator from '../components/CertificateTemplateGenerator';
 import { formatDate } from '../utils/dateUtils';
 import { handleApiError } from '../utils/errorHandler';
+import './AdminDashboard.css';
 
 interface User {
   id: number;
@@ -185,7 +186,10 @@ const SuperAdminDashboard: React.FC = () => {
       
       console.log('Super Admin Dashboard Stats:', statsRes.data);
       
-      setUsers(usersRes.data);
+      // Normalize role values — backend may return "UserRole.ADMIN" style strings
+      const normalizeRole = (r: string) =>
+        r ? r.toLowerCase().replace('userrole.', '').replace('userole.', '') : 'user';
+      setUsers((usersRes.data || []).map((u: any) => ({ ...u, role: normalizeRole(u.role) })));
       setEvents(eventsRes.data);
       setCertificates(certsRes.data);
     } catch (err: any) {
@@ -338,10 +342,13 @@ const SuperAdminDashboard: React.FC = () => {
     }
   };
 
-  const handleCertificateRevoke = async (certificateId: number) => {
+  const handleCertificateRevoke = async (certificateId: string) => {
     try {
       if (window.confirm('Are you sure you want to revoke this certificate?')) {
-        await api.post(`/certificates/${certificateId}/revoke`);
+        const formData = new FormData();
+        formData.append('reason', 'Revoked by administrator');
+        await api.post(`/certificates/${certificateId}/revoke`, formData);
+        setSuccess('Certificate revoked successfully');
         fetchDashboardData(); // Refresh data
       }
     } catch (err: any) {
@@ -373,10 +380,11 @@ const SuperAdminDashboard: React.FC = () => {
         const response = await api.post('/certificates/generate-single', {
           event_id: selectedEvent.id,
           recipient_name: singleCertForm.recipient_name.trim(),
-          participant_id: singleCertForm.participant_id.trim() || undefined
+          participant_id: singleCertForm.participant_id.trim() || undefined,
+          recipient_email: singleCertForm.recipient_email?.trim() || undefined
         });
 
-        setSuccess('Certificate generated successfully! 🎉');
+        setSuccess('Certificate generated successfully!');
       } else {
         // Bulk certificate generation
         const formData = new FormData();
@@ -397,7 +405,7 @@ const SuperAdminDashboard: React.FC = () => {
         });
 
         console.log('Bulk certificate generation response:', response.data);
-        setSuccess(`Certificates generated successfully! Generated: ${response.data.data?.generated_count || 'Unknown'} certificates 🎉`);
+        setSuccess(`Certificates generated successfully! Generated: ${response.data.data?.generated_count || 'Unknown'} certificates`);
       }
       
       console.log('Certificate generation completed successfully');
@@ -443,14 +451,15 @@ const SuperAdminDashboard: React.FC = () => {
     }
   };
 
-  const handleCertificateReissue = async (certificateId: number) => {
+  const handleCertificateReissue = async (certificateId: string) => {
     try {
       if (window.confirm('Are you sure you want to re-issue this certificate? This will generate a new certificate ID.')) {
         setError('');
         setSuccess('');
         
         const response = await api.post(`/certificates/${certificateId}/reissue`);
-        setSuccess(`Certificate re-issued successfully! New ID: ${response.data.certificate_id} 🎉`);
+        const newId = response.data?.data?.new_certificate_id ?? response.data?.new_certificate_id ?? response.data?.certificate_id;
+        setSuccess(`Certificate re-issued successfully! New ID: ${newId ?? 'Updated'}`);
         fetchDashboardData();
       }
     } catch (err: any) {
@@ -568,23 +577,24 @@ const SuperAdminDashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <Container className="py-5">
-        <div className="text-center">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-          <p className="mt-3">Loading dashboard...</p>
+      <div style={{ minHeight:'100vh', background:'var(--grad-bg)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div style={{ textAlign:'center' }}>
+          <span className="ds-spinner ds-spinner-lg" style={{ margin:'0 auto 14px' }} />
+          <p style={{ color:'var(--c-text-3)', fontSize:'0.9rem' }}>Loading dashboard…</p>
         </div>
-      </Container>
+      </div>
     );
   }
 
   return (
-    <Container fluid className="py-4 dashboard-container">
+    <div style={{ background:'var(--grad-bg)', minHeight:'100vh' }}>
+    <Container fluid className="py-4 admin-dashboard">
       <Row className="mb-4">
         <Col>
-          <h2>🔧 Super Admin Dashboard</h2>
-          <p className="text-muted">Welcome back, {user?.full_name || user?.email}!</p>
+          <div className="admin-hero">
+            <h2><i className="fas fa-tools me-2"></i>Super Admin Dashboard</h2>
+            <p className="text-muted mb-0">Welcome back, {user?.full_name || user?.email}!</p>
+          </div>
         </Col>
       </Row>
 
@@ -647,7 +657,7 @@ const SuperAdminDashboard: React.FC = () => {
 
       {/* Tabs */}
       <Tabs activeKey={activeTab} onSelect={handleTabSelect} className="mb-4">
-        <Tab eventKey="overview" title="📊 Overview">
+        <Tab eventKey="overview" title={<><i className="fas fa-chart-pie me-1"></i> Overview</>}>
           <Row>
             <Col md={6}>
               <Card>
@@ -674,8 +684,12 @@ const SuperAdminDashboard: React.FC = () => {
                               <td>{user.full_name}</td>
                               <td>{user.email}</td>
                               <td>
-                                <Badge bg={user.role === 'admin' ? 'primary' : 'secondary'}>
-                                  {user.role === 'admin' ? 'Admin' : 'User'}
+                                <Badge bg={
+                                  user.role === 'super_admin' ? 'warning' :
+                                  user.role === 'admin' ? 'primary' : 'secondary'
+                                }>
+                                  {user.role === 'super_admin' ? 'Super Admin' :
+                                   user.role === 'admin' ? 'Admin' : 'Student'}
                                 </Badge>
                               </td>
                               <td>
@@ -898,7 +912,7 @@ const SuperAdminDashboard: React.FC = () => {
           </Card>
         </Tab>
 
-        <Tab eventKey="events" title="📅 Events">
+        <Tab eventKey="events" title={<><i className="fas fa-calendar-alt me-1"></i> Events</>}>
           <Card>
             <Card.Header>
               <h5 className="mb-0">Event Management</h5>
@@ -1077,7 +1091,7 @@ const SuperAdminDashboard: React.FC = () => {
           </Card>
         </Tab>
 
-        <Tab eventKey="certificates" title="📜 Certificates">
+        <Tab eventKey="certificates" title={<><i className="fas fa-certificate me-1"></i> Certificates</>}>
           <Card>
             <Card.Header>
               <h5 className="mb-0">Certificate Management</h5>
@@ -1144,7 +1158,7 @@ const SuperAdminDashboard: React.FC = () => {
                             <Button 
                               size="sm" 
                               variant="outline-success"
-                              onClick={() => handleCertificateReissue(cert.id)}
+                              onClick={() => handleCertificateReissue(cert.certificate_id)}
                               title="Re-issue certificate with new ID"
                             >
                               🔄 Re-issue
@@ -1153,7 +1167,7 @@ const SuperAdminDashboard: React.FC = () => {
                               <Button 
                                 size="sm" 
                                 variant="outline-danger"
-                                onClick={() => handleCertificateRevoke(cert.id)}
+                                onClick={() => handleCertificateRevoke(cert.certificate_id)}
                               >
                                 🚫 Revoke
                               </Button>
@@ -1169,7 +1183,7 @@ const SuperAdminDashboard: React.FC = () => {
           </Card>
         </Tab>
 
-        <Tab eventKey="activity-logs" title="📊 Activity Logs">
+        <Tab eventKey="activity-logs" title={<><i className="fas fa-history me-1"></i> Activity Logs</>}>
           <Card>
             <Card.Header>
               <h5 className="mb-0">System Activity Logs</h5>
@@ -1232,7 +1246,7 @@ const SuperAdminDashboard: React.FC = () => {
           </Card>
         </Tab>
 
-        <Tab eventKey="tamper-logs" title="🚨 Tamper Detection">
+        <Tab eventKey="tamper-logs" title={<><i className="fas fa-shield-alt me-1"></i> Tamper Detection</>}>
           <Card>
             <Card.Header>
               <h5 className="mb-0">Tamper Detection Alerts</h5>
@@ -1290,7 +1304,7 @@ const SuperAdminDashboard: React.FC = () => {
           </Card>
         </Tab>
 
-        <Tab eventKey="notifications" title="🔔 Notification History">
+        <Tab eventKey="notifications" title={<><i className="fas fa-bell me-1"></i> Notification History</>}>
           <Card>
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h5 className="mb-0">System Notifications</h5>
@@ -1718,6 +1732,7 @@ const SuperAdminDashboard: React.FC = () => {
         </Form>
       </Modal>
     </Container>
+    </div>
   );
 };
 

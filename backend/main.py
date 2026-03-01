@@ -41,28 +41,37 @@ async def health_check():
     """Simple health check endpoint for monitoring"""
     return {"status": "healthy", "message": "Certificate System API is running"}
 
-# CORS middleware with security settings
+# ── Security middleware (added first = innermost, runs last) ──────────────
 security_settings = get_security_settings()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=security_settings.CORS_ALLOW_ORIGINS,
-    allow_credentials=security_settings.CORS_ALLOW_CREDENTIALS,
-    allow_methods=security_settings.CORS_ALLOW_METHODS,
-    allow_headers=security_settings.CORS_ALLOW_HEADERS,
-)
 
-# Security middleware (in order of execution)
 if security_settings.SECURITY_MONITORING_ENABLED:
     app.add_middleware(AuditMiddleware)
-    
+
 if security_settings.VALIDATION_ENABLED:
     app.add_middleware(InputValidationMiddleware)
-    
+
 if security_settings.SECURITY_HEADERS_ENABLED:
     app.add_middleware(SecurityHeadersMiddleware)
-    
+
 if security_settings.RATE_LIMIT_ENABLED:
     app.add_middleware(RateLimitMiddleware)
+
+# ── CORS middleware (added LAST = outermost, runs FIRST) ──────────────────
+# MUST be outermost so OPTIONS preflight is handled before security middleware.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://localhost:8000",
+        "http://localhost:8001",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
 
 # Include API routers
 app.include_router(auth.router, prefix="/api/v1")
@@ -95,17 +104,31 @@ async def startup_event():
         # Create tables
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
+
+        # Run column migrations for existing databases (ALTER TABLE for new columns)
+        try:
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(engine)
+            with engine.connect() as conn:
+                # Add private_key_b64 to users table if not exists
+                user_cols = [c['name'] for c in inspector.get_columns('users')]
+                if 'private_key_b64' not in user_cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN private_key_b64 TEXT"))
+                    conn.commit()
+                    logger.info("Added private_key_b64 column to users table")
+        except Exception as migration_err:
+            logger.warning(f"Column migration skipped (may already exist): {migration_err}")
         
         # Create default super admin if not exists - DISABLED FOR TESTING
         # await create_default_super_admin()
         
-        # Initialize blockchain service
+        # Initialize blockchain service (optional; app works without it)
         from app.services.blockchain import blockchain_service
         if blockchain_service.is_connected():
             balance = blockchain_service.get_balance()
             logger.info(f"Blockchain connected. Account balance: {balance} ETH")
         else:
-            logger.warning("Blockchain connection failed")
+            logger.info("Blockchain not connected (optional). Certificates work without it. Set valid PRIVATE_KEY and contract for chain storage.")
             
     except Exception as e:
         logger.error(f"Startup error: {e}")

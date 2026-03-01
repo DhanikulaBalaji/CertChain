@@ -501,7 +501,7 @@ async def get_users(
                     "username": user.email.split('@')[0],  # Extract username from email
                     "email": user.email,
                     "full_name": user.full_name,
-                    "role": str(user.role),  # Convert role to string safely
+                    "role": user.role.value if hasattr(user.role, 'value') else str(user.role).lower().replace('userrole.', ''),
                     "is_active": user.is_active,
                     "is_approved": user.is_approved,
                     "created_at": user.created_at.isoformat() if user.created_at else None,
@@ -517,7 +517,7 @@ async def get_users(
                     "username": user.email.split('@')[0] if user.email else "unknown",
                     "email": user.email or "unknown",
                     "full_name": user.full_name or "Unknown",
-                    "role": str(user.role) if user.role else "USER",
+                    "role": user.role.value if user.role and hasattr(user.role, 'value') else "user",
                     "is_active": bool(user.is_active),
                     "is_approved": bool(user.is_approved),
                     "created_at": None,

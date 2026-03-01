@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any, List
 import json
 import hashlib
 import uuid
+import time
 from datetime import datetime
 import os
 import tempfile
@@ -13,11 +14,36 @@ from PIL import Image
 import pytesseract
 
 from app.core.database import get_db
-from app.models.database import Certificate, Event, ActivityLog, User
+from app.models.database import Certificate, Event, ActivityLog, User as UserModel, CertificateStatus
 from app.core.auth import get_current_user
 from app.models.schemas import User
+from app.services.did_service import verify_signature as did_verify_signature
+from app.services.wallet_service import sign_challenge as wallet_sign_challenge
 
 router = APIRouter()
+
+# Challenge cache for DID ownership verification: challenge_uid -> { certificate_id, recipient_id, created_at }
+# TTL 300 seconds (5 minutes)
+_CHALLENGE_CACHE: Dict[str, Dict[str, Any]] = {}
+_CHALLENGE_TTL_SEC = 300
+
+
+def _store_challenge(challenge_uid: str, certificate_id: str, recipient_id: int) -> None:
+    _CHALLENGE_CACHE[challenge_uid] = {
+        "certificate_id": certificate_id,
+        "recipient_id": recipient_id,
+        "created_at": time.time(),
+    }
+
+
+def _get_and_consume_challenge(challenge_uid: str) -> Optional[Dict[str, Any]]:
+    """Return challenge payload if valid and not expired; remove from cache (one-time use)."""
+    entry = _CHALLENGE_CACHE.pop(challenge_uid, None)
+    if not entry:
+        return None
+    if time.time() - entry["created_at"] > _CHALLENGE_TTL_SEC:
+        return None
+    return entry
 
 class CertificateVerificationService:
     def __init__(self, db: Session):
@@ -71,12 +97,14 @@ class CertificateVerificationService:
                 "event_creator": cert.event.admin.full_name if cert.event and cert.event.admin else "Unknown Creator",
                 "event_date": cert.event.date.isoformat() if cert.event and cert.event.date else None,
                 "issued_date": cert.issued_at.isoformat() if cert.issued_at else None,
-                "issued_at": cert.issued_at.isoformat() if cert.issued_at else None,  # Keep for compatibility
+                "issued_at": cert.issued_at.isoformat() if cert.issued_at else None,
                 "status": cert.status,
-                "verification_score": score
+                "verification_score": score,
+                "certificate_pdf_url": f"/static/certificates/cert_{cert.certificate_id}.pdf",
             },
             "verification_score": score,
             "fraud_detected": fraud_indicators["is_fraud"],
+            "fraud_indicators": list(fraud_indicators.get("indicators", [])),
             "verification_details": {
                 "metadata_integrity": True,  # Certificate exists in database with valid metadata
                 "hash_verification": hash_valid,
@@ -94,7 +122,24 @@ class CertificateVerificationService:
             result["message"] = f"Fraud indicators detected: {', '.join(fraud_indicators['indicators'])}"
         else:
             result["message"] = "Certificate is valid and verified"
-        
+
+        # DID ownership verification layer: after successful hash/blockchain validation,
+        # require challenge-response if certificate has a recipient with DID.
+        result["verification_status"] = result.get("message", "")
+        result["ownership_verified"] = False
+        if success and cert.recipient_id and cert.recipient:
+            recipient = cert.recipient
+            if getattr(recipient, "did_id", None) and getattr(recipient, "public_key", None):
+                challenge_uid = str(uuid.uuid4())
+                _store_challenge(challenge_uid, cert.certificate_id, recipient.id)
+                result["ownership_pending"] = True
+                result["challenge"] = challenge_uid
+                result["verification_status"] = "Authentic"
+            else:
+                result["ownership_pending"] = False
+        else:
+            result["ownership_pending"] = False
+
         return result
 
     def verify_qr_data(self, certificate_id: str, qr_metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -178,14 +223,19 @@ class CertificateVerificationService:
                     else:
                         result["fraud_indicators"] = file_fraud_indicators
                     
-                    # Only flag as fraud if there are MULTIPLE concerning indicators
+                    # Only flag as fraud if there are MULTIPLE strong indicators
                     result["fraud_detected"] = len(result["fraud_indicators"]) >= 2
-                    
-                    # If certificate is valid but has minor issues, don't flag as fraud
-                    if result.get("success") and len(result["fraud_indicators"]) <= 1:
-                        result["fraud_detected"] = False
-                        result["message"] = "Certificate verified successfully with minor inconsistencies"
-                    
+
+                    if result.get("success"):
+                        if len(result["fraud_indicators"]) == 0:
+                            # Clean — no issues at all
+                            result["message"] = "Certificate is valid and authentic"
+                            result["fraud_detected"] = False
+                        elif len(result["fraud_indicators"]) == 1:
+                            # Verified but one soft warning (e.g. text extraction artefact)
+                            result["message"] = "Certificate verified with one minor note"
+                            result["fraud_detected"] = False
+
                     return result
                 else:
                     # More helpful error message
@@ -521,91 +571,338 @@ class CertificateVerificationService:
                 print(f"Fallback extraction also failed: {fallback_e}")
         
         return metadata
-        
-        return metadata
 
     def _check_file_fraud_indicators(self, file_metadata: Dict[str, Any], db_result: Dict[str, Any]) -> List[str]:
-        """Check for fraud indicators by comparing file metadata with database"""
+        """Check for fraud indicators by comparing file metadata with database.
+        Uses lenient fuzzy matching to avoid false positives from PDF text extraction."""
         indicators = []
-        
+
         if not db_result.get("success"):
             return indicators
-        
+
         db_cert = db_result.get("certificate", {})
-        
-        # Compare recipient names
+
+        def normalize(s: str) -> str:
+            """Lower-case, strip whitespace and punctuation for comparison."""
+            import re
+            return re.sub(r'[\s\-_.,]+', ' ', (s or '').lower()).strip()
+
+        def names_match(extracted: str, expected: str) -> bool:
+            """True if extracted name is a reasonable match for expected name."""
+            if not extracted or not expected:
+                return True   # can't compare → don't raise indicator
+            n_ext = normalize(extracted)
+            n_exp = normalize(expected)
+            # Exact match
+            if n_ext == n_exp:
+                return True
+            # One is a substring of the other (handles truncation by text extractor)
+            if n_ext in n_exp or n_exp in n_ext:
+                return True
+            # At least 60% of words match (handles partial OCR noise)
+            words_ext = set(n_ext.split())
+            words_exp = set(n_exp.split())
+            if not words_exp:
+                return True
+            overlap = len(words_ext & words_exp) / len(words_exp)
+            return overlap >= 0.6
+
+        # Only flag if BOTH extracted and db values are non-empty AND clearly differ
         if file_metadata.get("recipient_name") and db_cert.get("recipient_name"):
-            if file_metadata["recipient_name"].lower() != db_cert["recipient_name"].lower():
-                indicators.append("File recipient name doesn't match database")
-        
-        # Compare event names
+            if not names_match(file_metadata["recipient_name"], db_cert["recipient_name"]):
+                indicators.append("Recipient name in file doesn't match database record")
+
         if file_metadata.get("event_name") and db_cert.get("event_name"):
-            if file_metadata["event_name"].lower() not in db_cert["event_name"].lower():
-                indicators.append("File event name doesn't match database")
-        
+            if not names_match(file_metadata["event_name"], db_cert["event_name"]):
+                indicators.append("Event name in file doesn't match database record")
+
         return indicators
 
 @router.post("/verify-comprehensive")
 async def verify_certificate_comprehensive(
     request_data: dict,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Comprehensive certificate verification endpoint (authenticated)"""
+    """
+    Comprehensive certificate verification (authenticated).
+    Flow: QR Scan -> Fetch certificate -> Hash compare -> If valid, return challenge for DID ownership.
+    """
     service = CertificateVerificationService(db)
-    
+
     certificate_id = request_data.get("certificate_id")
     verification_type = request_data.get("verification_type", "id_lookup")
-    
+
     if not certificate_id:
         raise HTTPException(status_code=400, detail="Certificate ID is required")
-    
+
     if verification_type == "qr_scan":
         qr_metadata = request_data.get("qr_metadata", {})
         result = service.verify_qr_data(certificate_id, qr_metadata)
     else:
         result = service.verify_by_id(certificate_id)
-    
+
     # Log verification attempt
     activity_log = ActivityLog(
         user_id=current_user.id,
         action="certificate_verification",
         details=f"Verified certificate {certificate_id} via {verification_type}",
-        timestamp=datetime.utcnow()
+        timestamp=datetime.utcnow(),
     )
     db.add(activity_log)
     db.commit()
-    
+
+    # Auto-claim: if verification succeeded and cert not yet linked, link to current user when they match
+    if result.get("success") and result.get("certificate"):
+        cert = db.query(Certificate).filter(Certificate.certificate_id == certificate_id).first()
+        if cert and cert.status != CertificateStatus.REVOKED:
+            email_match = cert.recipient_email and current_user.email and cert.recipient_email.strip().lower() == current_user.email.strip().lower()
+            name_match = cert.recipient_name and current_user.full_name and cert.recipient_name.strip().lower() == current_user.full_name.strip().lower()
+            if (email_match or name_match) and (cert.recipient_id is None or cert.recipient_id == current_user.id):
+                cert.recipient_id = current_user.id
+                cert.recipient_email = current_user.email or cert.recipient_email
+                db.commit()
+                result["claimed_to_wallet"] = True
+
     return result
+
+
+@router.post("/claim")
+async def claim_certificate(
+    request_data: dict,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Link a certificate to the current user so it appears in their wallet.
+    Call after successful verification (e.g. QR scan). Certificate must be valid and
+    recipient must match current user (email or name).
+    """
+    certificate_id = request_data.get("certificate_id")
+    if not certificate_id:
+        raise HTTPException(status_code=400, detail="certificate_id is required")
+
+    cert = db.query(Certificate).filter(Certificate.certificate_id == certificate_id).first()
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    if cert.status == CertificateStatus.REVOKED:
+        raise HTTPException(status_code=400, detail="Certificate has been revoked")
+
+    email_match = cert.recipient_email and current_user.email and cert.recipient_email.strip().lower() == current_user.email.strip().lower()
+    name_match = cert.recipient_name and current_user.full_name and cert.recipient_name.strip().lower() == current_user.full_name.strip().lower()
+    if not (email_match or name_match):
+        raise HTTPException(
+            status_code=403,
+            detail="This certificate is not issued to you. Recipient email or name must match your account.",
+        )
+
+    if cert.recipient_id is not None and cert.recipient_id != current_user.id:
+        raise HTTPException(status_code=400, detail="Certificate is already linked to another user.")
+
+    cert.recipient_id = current_user.id
+    cert.recipient_email = current_user.email or cert.recipient_email
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Certificate added to your wallet.",
+        "certificate_id": certificate_id,
+    }
+
 
 @router.post("/verify-public")
 async def verify_certificate_public(
     request_data: dict,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Public certificate verification endpoint for user dashboard"""
+    """Public certificate verification endpoint for user dashboard (same flow, no auth)."""
     service = CertificateVerificationService(db)
-    
+
     certificate_id = request_data.get("certificate_id")
     verification_type = request_data.get("verification_type", "id_lookup")
-    
+
     if not certificate_id:
         raise HTTPException(status_code=400, detail="Certificate ID is required")
-    
+
     if verification_type == "qr_scan":
         qr_metadata = request_data.get("qr_metadata", {})
         result = service.verify_qr_data(certificate_id, qr_metadata)
     else:
         result = service.verify_by_id(certificate_id)
-    
+
     return result
+
+
+@router.get("/public/{certificate_id}")
+async def get_public_certificate(
+    certificate_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Public GET endpoint called when a QR code is scanned without login.
+    Returns certificate details, validity status, and PDF URL.
+    Does NOT expose blockchain tx hash, SHA-256 hash, or DID internals.
+    """
+    cert = db.query(Certificate).filter(Certificate.certificate_id == certificate_id).first()
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    service = CertificateVerificationService(db)
+    result = service.verify_by_id(certificate_id)
+
+    c = result.get("certificate", {})
+    return {
+        "certificate_id": certificate_id,
+        "recipient_name": c.get("recipient_name", cert.recipient_name),
+        "recipient_email": cert.recipient_email,
+        "event_name": c.get("event_name", ""),
+        "event_description": cert.event.description if cert.event else None,
+        "event_date": c.get("event_date"),
+        "event_creator": c.get("event_creator", ""),
+        "issued_date": c.get("issued_date"),
+        "status": cert.status if isinstance(cert.status, str) else cert.status.value,
+        "is_verified": result.get("success", False),
+        "certificate_pdf_url": f"/static/certificates/cert_{certificate_id}.pdf",
+        "certificate_image_url": None,
+        "participant_id": cert.participant_id if hasattr(cert, "participant_id") else None,
+        "verification_result": {
+            "success": result.get("success", False),
+            "message": result.get("message", ""),
+            "fraud_detected": result.get("fraud_detected", False),
+            "verification_score": result.get("verification_score", 0),
+            "verification_details": result.get("verification_details", {}),
+        },
+    }
+
+
+@router.post("/complete-ownership-verification")
+async def complete_ownership_verification(
+    request_data: dict,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    After successful blockchain/hash validation, complete DID ownership verification.
+    Wallet signs the challenge (server-side wallet); backend verifies signature.
+    Caller must be the certificate recipient. Returns final verification_status.
+    """
+    certificate_id = request_data.get("certificate_id")
+    challenge = request_data.get("challenge")
+    if not certificate_id or not challenge:
+        raise HTTPException(
+            status_code=400,
+            detail="certificate_id and challenge are required",
+        )
+
+    payload = _get_and_consume_challenge(challenge)
+    if not payload or payload["certificate_id"] != certificate_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired challenge",
+        )
+    if payload["recipient_id"] != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the certificate recipient can complete ownership verification",
+        )
+
+    cert = (
+        db.query(Certificate)
+        .filter(Certificate.certificate_id == certificate_id)
+        .first()
+    )
+    if not cert or not cert.recipient or not cert.recipient.public_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Certificate or recipient DID not found",
+        )
+
+    signature = wallet_sign_challenge(current_user.id, challenge)
+    if not signature:
+        return {
+            "success": False,
+            "verification_status": "Authentic but Ownership Failed",
+            "message": "Wallet could not sign (no private key or signing failed)",
+        }
+
+    valid = did_verify_signature(
+        cert.recipient.public_key,
+        signature,
+        challenge,
+    )
+    if valid:
+        return {
+            "success": True,
+            "verification_status": "Authentic and Ownership Verified",
+            "message": "Certificate is valid and ownership verified via DID.",
+        }
+    return {
+        "success": False,
+        "verification_status": "Authentic but Ownership Failed",
+        "message": "Signature verification failed.",
+    }
+
+
+@router.post("/verify-ownership")
+async def verify_ownership(
+    request_data: dict,
+    db: Session = Depends(get_db),
+):
+    """
+    Verify ownership when client holds the private key (client-side wallet).
+    Request body: certificate_id, challenge, signature (hex).
+    """
+    certificate_id = request_data.get("certificate_id")
+    challenge = request_data.get("challenge")
+    signature = request_data.get("signature")
+    if not certificate_id or not challenge or not signature:
+        raise HTTPException(
+            status_code=400,
+            detail="certificate_id, challenge, and signature are required",
+        )
+
+    payload = _get_and_consume_challenge(challenge)
+    if not payload or payload["certificate_id"] != certificate_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired challenge",
+        )
+
+    cert = (
+        db.query(Certificate)
+        .filter(Certificate.certificate_id == certificate_id)
+        .first()
+    )
+    if not cert or not cert.recipient_id or not cert.recipient or not cert.recipient.public_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Certificate or recipient DID not found",
+        )
+
+    valid = did_verify_signature(
+        cert.recipient.public_key,
+        signature,
+        challenge,
+    )
+    if valid:
+        return {
+            "success": True,
+            "verification_status": "Authentic and Ownership Verified",
+            "message": "Certificate is valid and ownership verified via DID.",
+        }
+    return {
+        "success": False,
+        "verification_status": "Authentic but Ownership Failed",
+        "message": "Signature verification failed.",
+    }
+
 
 @router.post("/verify-file")
 async def verify_certificate_file(
     file: UploadFile = File(...),
     verification_type: str = Form("file_upload"),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Verify certificate from uploaded file (authenticated)"""
     service = CertificateVerificationService(db)
@@ -628,23 +925,18 @@ async def verify_certificate_file(
 async def verify_certificate_file_public(
     file: UploadFile = File(...),
     verification_type: str = Form("file_upload"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Verify certificate from uploaded file (public endpoint for user dashboard)"""
     service = CertificateVerificationService(db)
-    
     result = service.verify_uploaded_file(file)
-    
-    return result
-    db.commit()
-    
     return result
 
 @router.get("/{certificate_id}/download")
 async def download_certificate(
     certificate_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Download certificate file"""
     try:
@@ -716,11 +1008,72 @@ async def download_certificate(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Download error: {str(e)}")
 
+@router.get("/public/{certificate_id}")
+async def get_public_certificate_view(
+    certificate_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Public certificate view endpoint - used when QR code is scanned.
+    Returns full certificate details + verification status without authentication.
+    """
+    service = CertificateVerificationService(db)
+    result = service.verify_by_id(certificate_id)
+
+    # Get full certificate data
+    cert = db.query(Certificate).filter(
+        Certificate.certificate_id == certificate_id
+    ).first()
+
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    # Build certificate image URL
+    import os
+    cert_image_url = None
+    pdf_url = None
+    possible_pdf = [
+        f"./certificates/cert_{certificate_id}.pdf",
+        f"certificates/cert_{certificate_id}.pdf",
+    ]
+    possible_img = [
+        f"./certificates/cert_{certificate_id}.png",
+        f"certificates/cert_{certificate_id}.png",
+    ]
+    for p in possible_pdf:
+        if os.path.exists(p):
+            pdf_url = f"/static/certificates/cert_{certificate_id}.pdf"
+            break
+    for p in possible_img:
+        if os.path.exists(p):
+            cert_image_url = f"/static/certificates/cert_{certificate_id}.png"
+            break
+
+    return {
+        "certificate_id": cert.certificate_id,
+        "recipient_name": cert.recipient_name,
+        "recipient_email": cert.recipient_email,
+        "event_name": cert.event.name if cert.event else "Unknown Event",
+        "event_description": cert.event.description if cert.event else None,
+        "event_date": cert.event.date.strftime('%Y-%m-%d') if cert.event and cert.event.date else None,
+        "event_creator": cert.event.admin.full_name if cert.event and cert.event.admin else "Unknown",
+        "issued_date": cert.issued_at.strftime('%Y-%m-%d') if cert.issued_at else None,
+        "status": cert.status.value if hasattr(cert.status, 'value') else str(cert.status),
+        "sha256_hash": cert.sha256_hash,
+        "blockchain_tx_hash": cert.blockchain_tx_hash,
+        "is_verified": cert.is_verified,
+        "verification_result": result,
+        "certificate_image_url": cert_image_url,
+        "certificate_pdf_url": pdf_url,
+        "participant_id": cert.participant_id,
+    }
+
+
 @router.post("/fraud-alert")
 async def create_fraud_alert(
     alert_data: dict,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Create fraud alert for SuperAdmin"""
     # Log fraud detection

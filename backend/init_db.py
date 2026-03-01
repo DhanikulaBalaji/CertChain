@@ -32,7 +32,28 @@ def init_database():
         # Create all tables
         Base.metadata.create_all(bind=engine)
         print("✅ Database schema created")
-        
+
+        # Run column migrations for existing databases
+        try:
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(engine)
+            with engine.connect() as conn:
+                user_cols = [c['name'] for c in inspector.get_columns('users')]
+                if 'private_key_b64' not in user_cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN private_key_b64 TEXT"))
+                    conn.commit()
+                    print("✅ Migration: added private_key_b64 column to users")
+                if 'did_id' not in user_cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN did_id TEXT"))
+                    conn.commit()
+                    print("✅ Migration: added did_id column to users")
+                if 'public_key' not in user_cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN public_key TEXT"))
+                    conn.commit()
+                    print("✅ Migration: added public_key column to users")
+        except Exception as mig_err:
+            print(f"⚠️ Column migration (may already exist): {mig_err}")
+
         # Create default super admin
         db = next(get_db())
         

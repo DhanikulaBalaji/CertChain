@@ -87,16 +87,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       console.log('Login successful');
     } catch (error: any) {
-      console.error('Login error details:', {
-        message: error.message,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        url: error.config?.url
-      });
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
-      throw new Error(error.response?.data?.detail || error.message || 'Login failed');
+      // Preserve the axios response so Login.tsx can read err.response?.data?.detail
+      throw error;
     }
   };
 

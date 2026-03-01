@@ -11,6 +11,8 @@ from app.models.database import User as UserModel, UserRole
 from app.models.schemas import User, UserCreate, UserUpdate, Token, LoginRequest, Response, PasswordChange
 from app.services.enhanced_auth_service import enhanced_auth_service
 from app.services.audit_service import audit_service, SecurityEventType, SecuritySeverity
+from app.services.did_service import generate_did
+from app.services.wallet_service import set_private_key as wallet_set_private_key
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -27,32 +29,58 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
             )
 
         # Determine requested role
-        requested_role = user_data.role if user_data.role in [UserRole.ADMIN, UserRole.USER] else UserRole.USER
+        requested_role = user_data.role if user_data.role in [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.USER] else UserRole.USER
 
-        # Only allow direct approval for USER, require superadmin approval for ADMIN
-        is_approved = False
-        approval_message = "User registered successfully. Waiting for superadmin approval."
-        if requested_role == UserRole.USER:
-            approval_message = "User registered successfully. Waiting for admin approval."
+        # Approval logic per role:
+        # - super_admin → always auto-approved (for demo/academic use)
+        # - admin       → needs super_admin approval
+        # - user/student→ needs admin approval
+        if requested_role == UserRole.SUPER_ADMIN:
+            is_approved = True
+            approval_message = "Super Admin account created successfully. You can log in immediately."
+        elif requested_role == UserRole.ADMIN:
+            is_approved = False
+            approval_message = "Admin account created. Waiting for Super Admin approval before you can log in."
+        else:
+            is_approved = False
+            approval_message = "Student account created. Waiting for Admin approval before you can log in."
 
         hashed_password = get_password_hash(user_data.password)
+
+        # Generate DID for the new user (ownership verification layer)
+        did_id, public_key_pem, private_key_pem = generate_did()
+
+        import base64
+        private_key_b64 = base64.b64encode(private_key_pem.encode()).decode()
+
         new_user = UserModel(
             email=user_data.email,
             full_name=user_data.full_name,
             hashed_password=hashed_password,
             role=requested_role,
             is_active=True,
-            is_approved=is_approved
+            is_approved=is_approved,
+            did_id=did_id,
+            public_key=public_key_pem,
+            private_key_b64=private_key_b64,
         )
 
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
 
+        # Store private key in wallet (server-side; also persisted in DB as base64)
+        wallet_set_private_key(new_user.id, private_key_pem)
+
         return Response(
             success=True,
             message=approval_message,
-            data={"user_id": new_user.id, "requested_role": requested_role}
+            data={
+                "user_id": new_user.id,
+                "role": requested_role,
+                "is_approved": is_approved,
+                "did_id": did_id
+            }
         )
 
     except HTTPException:
@@ -130,9 +158,41 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
             details={"role": user.role.value}
         )
         
+        # Reload private key into wallet from DB (in case of server restart)
+        import base64
+        if user.private_key_b64:
+            try:
+                private_key_pem = base64.b64decode(user.private_key_b64).decode()
+                wallet_set_private_key(user.id, private_key_pem)
+            except Exception:
+                pass
+
+        # Auto-link any unlinked certificates to this user by email
+        try:
+            from app.models.database import Certificate as CertificateModel, CertificateStatus
+            unlinked = db.query(CertificateModel).filter(
+                CertificateModel.recipient_email == user.email,
+                CertificateModel.recipient_id.is_(None)
+            ).all()
+            for cert in unlinked:
+                cert.recipient_id = user.id
+            if unlinked:
+                db.commit()
+        except Exception:
+            pass
+
         return {
             "access_token": access_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role.value,
+                "is_active": user.is_active,
+                "is_approved": user.is_approved,
+                "did_id": user.did_id,
+            }
         }
         
     except HTTPException:

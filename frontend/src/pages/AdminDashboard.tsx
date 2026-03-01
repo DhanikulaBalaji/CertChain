@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Button, Form, Alert, Table, Badge, Modal, Tab, Tabs } from 'react-bootstrap';
-import { useAuth } from '../services/AuthContext';
+import React, { useEffect, useState } from 'react';
+import { Alert, Badge, Button, Card, Col, Container, Form, Modal, Row, Tab, Table, Tabs } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { useAuth } from '../services/AuthContext';
 import { formatDate } from '../utils/dateUtils';
 import { handleApiError } from '../utils/errorHandler';
+import './AdminDashboard.css';
 
 interface Event {
   id: number;
@@ -78,7 +79,8 @@ const AdminDashboard: React.FC = () => {
   const [certGenerationType, setCertGenerationType] = useState<'single' | 'bulk'>('bulk');
   const [singleCertForm, setSingleCertForm] = useState({
     recipient_name: '',
-    participant_id: ''
+    participant_id: '',
+    recipient_email: ''
   });
 
   // Event participants management
@@ -315,10 +317,11 @@ const AdminDashboard: React.FC = () => {
         const response = await api.post('/certificates/generate-single', {
           event_id: selectedEvent.id,
           recipient_name: singleCertForm.recipient_name.trim(),
-          participant_id: singleCertForm.participant_id.trim() || undefined
+          participant_id: singleCertForm.participant_id.trim() || undefined,
+          recipient_email: singleCertForm.recipient_email?.trim() || undefined
         });
 
-        setSuccess('Certificate generated successfully! 🎉');
+        setSuccess('Certificate generated successfully!');
       } else {
         // Bulk certificate generation
         const formData = new FormData();
@@ -339,13 +342,13 @@ const AdminDashboard: React.FC = () => {
         });
 
         console.log('Bulk certificate generation response:', response.data);
-        setSuccess(`Certificates generated successfully! Generated: ${response.data.data?.generated_count || 'Unknown'} certificates 🎉`);
+        setSuccess(`Certificates generated successfully! Generated: ${response.data.data?.generated_count || 'Unknown'} certificates`);
       }
 
       setShowCertModal(false);
       setCsvFile(null);
       setSelectedEvent(null);
-      setSingleCertForm({ recipient_name: '', participant_id: '' });
+      setSingleCertForm({ recipient_name: '', participant_id: '', recipient_email: '' });
       fetchData();
       fetchBlockchainStatus(); // Refresh blockchain status after certificate generation
     } catch (err: any) {
@@ -533,25 +536,24 @@ const AdminDashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <Container className="py-5">
-        <div className="text-center">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-          <p className="mt-3">Loading dashboard...</p>
+      <div style={{ minHeight:'100vh', background:'var(--grad-bg)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div style={{ textAlign:'center' }}>
+          <span className="ds-spinner ds-spinner-lg" style={{ margin:'0 auto 14px' }} />
+          <p style={{ color:'var(--c-text-3)', fontSize:'0.9rem' }}>Loading dashboard…</p>
         </div>
-      </Container>
+      </div>
     );
   }
 
   return (
-    <Container fluid className="py-4 dashboard-container">
+    <div style={{ background:'var(--grad-bg)', minHeight:'100vh' }}>
+    <Container fluid className="py-4 admin-dashboard">
       <Row className="mb-4">
         <Col>
-          <div className="d-flex justify-content-between align-items-center">
+          <div className="admin-hero d-flex justify-content-between align-items-center">
             <div>
-              <h2>⚙️ Admin Dashboard</h2>
-              <p className="text-muted">Welcome back, {user?.full_name}!</p>
+              <h2><i className="fas fa-cogs me-2"></i>Admin Dashboard</h2>
+              <p className="text-muted mb-0">Welcome back, {user?.full_name}!</p>
             </div>
             <div className="d-flex gap-2 align-items-center">
               <Button 
@@ -701,7 +703,7 @@ const AdminDashboard: React.FC = () => {
 
       {/* Tabs */}
       <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k || 'overview')} className="mb-4">
-        <Tab eventKey="overview" title="📊 Overview">
+        <Tab eventKey="overview" title={<><i className="fas fa-chart-pie me-1"></i> Overview</>}>
           <Row>
             <Col md={6}>
               <Card>
@@ -791,7 +793,7 @@ const AdminDashboard: React.FC = () => {
           </Row>
         </Tab>
 
-        <Tab eventKey="events" title="📅 My Events">
+        <Tab eventKey="events" title={<><i className="fas fa-calendar-alt me-1"></i> My Events</>}>
           <Card>
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h5 className="mb-0">My Events</h5>
@@ -887,7 +889,7 @@ const AdminDashboard: React.FC = () => {
           </Card>
         </Tab>
 
-        <Tab eventKey="certificates" title="📜 Certificates">
+        <Tab eventKey="certificates" title={<><i className="fas fa-certificate me-1"></i> Certificates</>}>
           <Card>
             <Card.Header>
               <h5 className="mb-0">Generated Certificates</h5>
@@ -974,7 +976,7 @@ const AdminDashboard: React.FC = () => {
         </Tab>
 
         {/* Blockchain Tab */}
-        <Tab eventKey="blockchain" title="⛓️ Blockchain">
+        <Tab eventKey="blockchain" title={<><i className="fas fa-link me-1"></i> Blockchain</>}>
           <Card className="mt-3">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h5 className="mb-0">🔗 Blockchain Management</h5>
@@ -1371,6 +1373,21 @@ const AdminDashboard: React.FC = () => {
                     Optional identifier (student ID, employee number, etc.). If left empty, a random ID will be generated.
                   </Form.Text>
                 </Form.Group>
+                <Form.Group className="mb-3">
+                  <Form.Label>Recipient Email (Optional – for wallet &amp; DID)</Form.Label>
+                  <Form.Control
+                    type="email"
+                    placeholder="recipient@example.com"
+                    value={singleCertForm.recipient_email || ''}
+                    onChange={(e) => setSingleCertForm({
+                      ...singleCertForm,
+                      recipient_email: e.target.value
+                    })}
+                  />
+                  <Form.Text className="text-muted">
+                    Use the recipient&apos;s registered email so the certificate appears in their wallet and supports DID verification.
+                  </Form.Text>
+                </Form.Group>
               </>
             ) : (
               <Form.Group className="mb-3">
@@ -1431,7 +1448,7 @@ const AdminDashboard: React.FC = () => {
             <Button variant="secondary" onClick={() => {
               setShowCertModal(false);
               setCertGenerationType('bulk');
-              setSingleCertForm({ recipient_name: '', participant_id: '' });
+              setSingleCertForm({ recipient_name: '', participant_id: '', recipient_email: '' });
             }}>
               Cancel
             </Button>
@@ -1679,6 +1696,7 @@ const AdminDashboard: React.FC = () => {
         </Modal.Footer>
       </Modal>
     </Container>
+    </div>
   );
 };
 

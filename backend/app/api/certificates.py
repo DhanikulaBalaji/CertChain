@@ -272,16 +272,21 @@ async def download_certificate(
         
         # Check if user can access this certificate
         can_access = False
-        
+
         # Admins and super admins can download any certificate
         if current_user.role.value in ["admin", "super_admin"]:
             can_access = True
-        # Regular users can only download their own certificates from closed events
-        elif (certificate.event.status == "closed" and 
-              (certificate.recipient_name == current_user.full_name or 
-               certificate.recipient_name == current_user.email)):
-            can_access = True
-        
+        else:
+            # Regular users can download their own certificates
+            # Match by recipient_id, email, or full name
+            is_owner = (
+                (certificate.recipient_id is not None and certificate.recipient_id == current_user.id) or
+                (certificate.recipient_email and certificate.recipient_email.lower() == current_user.email.lower()) or
+                (certificate.recipient_name and certificate.recipient_name.lower() == current_user.full_name.lower())
+            )
+            if is_owner and certificate.status != "revoked":
+                can_access = True
+
         if not can_access:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -705,34 +710,44 @@ async def get_certificate(
     return certificate
 
 @router.get("/{certificate_id}/download")
-async def download_certificate(
+async def download_certificate_alt(
     certificate_id: str,
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_approved_user)
 ):
-    """Download certificate file"""
+    """Download certificate file (alternate URL pattern)"""
     certificate = db.query(CertificateModel).filter(
         CertificateModel.certificate_id == certificate_id
     ).first()
-    
+
     if not certificate:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Certificate not found"
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found")
+
+    # Access check
+    if current_user.role.value not in ["admin", "super_admin"]:
+        is_owner = (
+            (certificate.recipient_id is not None and certificate.recipient_id == current_user.id) or
+            (certificate.recipient_email and certificate.recipient_email.lower() == current_user.email.lower()) or
+            (certificate.recipient_name and certificate.recipient_name.lower() == current_user.full_name.lower())
         )
-    
-    # Use pdf_path field (not certificate_path)
-    if not certificate.pdf_path or not os.path.exists(certificate.pdf_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Certificate file not found"
-        )
-    
-    return FileResponse(
+        if not is_owner or certificate.status == "revoked":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    # Resolve file — try multiple paths
+    file_path = None
+    for path in [
         certificate.pdf_path,
-        media_type="application/pdf",
-        filename=f"certificate_{certificate_id}.pdf"
-    )
+        f"./certificates/cert_{certificate_id}.pdf",
+        f"certificates/cert_{certificate_id}.pdf",
+    ]:
+        if path and os.path.exists(path):
+            file_path = path
+            break
+
+    if not file_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate file not found")
+
+    return FileResponse(file_path, media_type="application/pdf", filename=f"certificate_{certificate_id}.pdf")
 
 @router.post("/validate", response_model=ValidationResult)
 async def validate_certificate(

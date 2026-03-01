@@ -51,6 +51,10 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.USER)
     is_active = Column(Boolean, default=True)
     is_approved = Column(Boolean, default=False)
+    # DID (Decentralized Identity) - public key stored; private key stored encrypted
+    did_id = Column(String, nullable=True, index=True)
+    public_key = Column(Text, nullable=True)
+    private_key_b64 = Column(Text, nullable=True)  # Base64-encoded private key for DID signing
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
     

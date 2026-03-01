@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Table, Button, Alert, Badge, Spinner } from 'react-bootstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { 
-  faCertificate, 
-  faDownload, 
-  faCalendarAlt, 
-  faUser, 
+import {
+  faCalendarAlt,
+  faCertificate,
+  faDownload,
+  faExclamationTriangle,
   faEye,
   faSpinner,
-  faExclamationTriangle
+  faUser
 } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import React, { useEffect, useState } from 'react';
+import { Alert, Badge, Button, Card, Col, Container, Row, Spinner, Table } from 'react-bootstrap';
 import api from '../services/api';
 
 interface Certificate {
@@ -92,11 +92,11 @@ const MyCertificates: React.FC = () => {
   }
 
   return (
-    <Container className="mt-4">
+    <Container className="my-certs-page mt-4">
       <Row>
         <Col>
           <Card className="shadow-sm">
-            <Card.Header className="bg-primary text-white">
+            <Card.Header className="my-certs-header">
               <h4 className="mb-0">
                 <FontAwesomeIcon icon={faCertificate} className="me-2" />
                 My Certificates
@@ -131,8 +131,8 @@ const MyCertificates: React.FC = () => {
                     </Alert>
                   </div>
 
-                  <div className="table-responsive">
-                    <Table striped bordered hover>
+                  <div className="table-responsive my-certs-table-wrap">
+                    <Table striped bordered hover className="my-certs-table">
                       <thead className="table-dark">
                         <tr>
                           <th>Certificate ID</th>

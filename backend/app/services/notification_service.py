@@ -81,6 +81,28 @@ class NotificationService:
             self.db.rollback()
             return False
 
+    async def send_certificate_notification(self, certificate_id: int, recipient_email: str = "") -> bool:
+        """Called after certificate generation to notify the recipient (in-app)."""
+        try:
+            from app.models.database import Certificate as CertModel, User as UserModel
+            cert = self.db.query(CertModel).filter(CertModel.id == certificate_id).first()
+            if cert:
+                recipient = self.db.query(UserModel).filter(UserModel.email == recipient_email).first()
+                if recipient:
+                    self.create_user_notification(
+                        user_id=recipient.id,
+                        title="🎓 Certificate Issued",
+                        message=f"Your certificate for '{cert.event.name if cert.event else 'event'}' has been issued. Check your wallet.",
+                        notification_type="certificate_issued",
+                        priority="high",
+                        metadata={"certificate_id": cert.certificate_id}
+                    )
+            logger.info(f"Certificate notification sent for cert_id={certificate_id} to {recipient_email}")
+            return True
+        except Exception as e:
+            logger.error(f"send_certificate_notification error: {e}")
+            return False
+
     def send_certificate_issued_notification(self, certificate_data: dict, recipient_email: str = None) -> bool:
         """Log certificate issuance (email functionality disabled)"""
         try:

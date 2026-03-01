@@ -108,15 +108,22 @@ const CertificateValidation: React.FC = () => {
     if (code) {
       stopQR();
       let foundId = '';
+      let verifyUrl = '';
       try {
         const parsed = JSON.parse(code.data);
         foundId = parsed.certificate_id || parsed.id || '';
+        verifyUrl = parsed.verify_url || '';
       } catch {
-        if (code.data.startsWith('CERT-')) foundId = code.data;
+        // Plain text QR — could be a URL like http://localhost:3000/verify/CERT-xxx or just the ID
+        const urlMatch = code.data.match(/\/verify\/([A-Z0-9-]+)/i);
+        if (urlMatch) { foundId = urlMatch[1]; }
+        else if (code.data.startsWith('CERT-')) { foundId = code.data; }
       }
       if (foundId) {
-        setCertId(foundId);
-        validate(foundId);
+        // Navigate to the unified VerifyPage which shows the full certificate visual
+        navigate(`/verify/${foundId}`);
+      } else if (verifyUrl) {
+        window.location.href = verifyUrl;
       } else {
         setError('QR code does not contain a valid certificate ID');
       }
@@ -345,7 +352,9 @@ const CertificateValidation: React.FC = () => {
                       {details.status && (
                         <div className="cv-detail-row">
                           <span>Status</span>
-                          <strong style={{ textTransform: 'capitalize' }}>{details.status}</strong>
+                          <strong style={{ textTransform: 'capitalize' }}>
+                            {details.status.replace(/^CertificateStatus\./i, '').toLowerCase()}
+                          </strong>
                         </div>
                       )}
                     </div>
@@ -385,9 +394,9 @@ const CertificateValidation: React.FC = () => {
                 <button className="cv-btn cv-btn-ghost" onClick={() => { setStep(1); setResult(null); setCertId(''); setUploadedFile(null); setError(null); }}>
                   ← Validate Another
                 </button>
-                {normalize(result.status) === 'valid' && result.certificate_id && (
-                  <button className="cv-btn cv-btn-primary" onClick={() => navigate(`/certificate/${result.certificate_id}`)}>
-                    📋 View Full Details
+                {result.certificate_id && (
+                  <button className="cv-btn cv-btn-primary" onClick={() => navigate(`/verify/${result.certificate_id}`)}>
+                    📋 View Full Certificate
                   </button>
                 )}
               </div>

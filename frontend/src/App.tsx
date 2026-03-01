@@ -1,22 +1,26 @@
+import '@fortawesome/fontawesome-free/css/all.min.css';
+import 'bootstrap/dist/css/bootstrap.min.css';
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './services/AuthContext';
+import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import './App.css';
+import './design-system.css';
 import Navbar from './components/Navbar';
 import NotificationToast from './components/NotificationToast';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Profile from './pages/Profile';
-import MyCertificates from './pages/MyCertificates';
-import ForgotPassword from './pages/ForgotPassword';
-import SuperAdminDashboard from './pages/SuperAdminDashboard';
-import AdminDashboard from './pages/AdminDashboard';
-import UserDashboard from './pages/UserDashboard';
-import CertificateValidation from './pages/CertificateValidation';
-import CertificateDetailsPage from './pages/CertificateDetailsPage';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import '@fortawesome/fontawesome-free/css/all.min.css';
-import './App.css';
 import './EnhancedAnimations.css';
+import AdminDashboard from './pages/AdminDashboard';
+import CertificateDetailsPage from './pages/CertificateDetailsPage';
+import CertificateValidation from './pages/CertificateValidation';
+import CertificateWallet from './pages/CertificateWallet';
+import ForgotPassword from './pages/ForgotPassword';
+import Login from './pages/Login';
+import MyCertificates from './pages/MyCertificates';
+import Profile from './pages/Profile';
+import PublicCertificateView from './pages/PublicCertificateView';
+import VerifyPage from './pages/VerifyPage';
+import Register from './pages/Register';
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import UserDashboard from './pages/UserDashboard';
+import { AuthProvider, useAuth } from './services/AuthContext';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ 
@@ -27,10 +31,8 @@ const ProtectedRoute: React.FC<{
 
   if (isLoading) {
     return (
-      <div className="d-flex justify-content-center align-items-center vh-100">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
+      <div style={{ minHeight:'100vh', background:'var(--grad-bg)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <span className="ds-spinner ds-spinner-lg" />
       </div>
     );
   }
@@ -53,10 +55,8 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   if (isLoading) {
     return (
-      <div className="d-flex justify-content-center align-items-center vh-100">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
+      <div style={{ minHeight:'100vh', background:'var(--grad-bg)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <span className="ds-spinner ds-spinner-lg" />
       </div>
     );
   }
@@ -89,10 +89,16 @@ const DashboardRouter: React.FC = () => {
 
 const AppContent: React.FC = () => {
   const { isAuthenticated } = useAuth();
+  // /verify pages: hide navbar for unauthenticated visitors (QR scan public view)
+  // but SHOW navbar for logged-in users so they can navigate back
+  const isUnauthPublicVerify = !isAuthenticated && (
+    window.location.pathname.startsWith('/verify') ||
+    window.location.pathname.startsWith('/cert/')
+  );
 
   return (
     <div className="App">
-      {isAuthenticated && <Navbar />}
+      {isAuthenticated && !isUnauthPublicVerify && <Navbar />}
       <NotificationToast />
       <main>
         <Routes>
@@ -138,9 +144,16 @@ const AppContent: React.FC = () => {
             </ProtectedRoute>
           } />
 
+          {/* Wallet and Certificates — USER only */}
           <Route path="/my-certificates" element={
-            <ProtectedRoute allowedRoles={['user', 'admin', 'super_admin']}>
+            <ProtectedRoute allowedRoles={['user']}>
               <MyCertificates />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/wallet" element={
+            <ProtectedRoute allowedRoles={['user']}>
+              <CertificateWallet />
             </ProtectedRoute>
           } />
 
@@ -153,6 +166,11 @@ const AppContent: React.FC = () => {
           <Route path="/validate-certificate" element={
             <CertificateValidation />
           } />
+
+          {/* Unified certificate verification route — role-aware (Public / User / Admin) */}
+          <Route path="/verify/:certificateId" element={<VerifyPage />} />
+          <Route path="/verify" element={<VerifyPage />} />
+          <Route path="/cert/:certificateId" element={<VerifyPage />} />
 
           <Route path="/certificate/:certificateId" element={
             <CertificateDetailsPage />

@@ -50,8 +50,11 @@ class Settings(BaseSettings):
     super_admin_password: str = "admin123"
     
     # CORS Configuration
-    cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]  # Added
-    
+    cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]
+
+    # Public base URL for QR code generation (points to the frontend)
+    base_url: str = "http://localhost:3000"
+
     class Config:
         env_file = ".env"
         extra = "ignore"  # Ignore extra fields from .env

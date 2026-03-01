@@ -1,0 +1,418 @@
+/* ===== Public Certificate View - for QR Scan Landing ===== */
+
+.pcv-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0a0a1a 0%, #1a1040 50%, #0a1020 100%);
+  color: #e2e8f0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Brand Header */
+.pcv-brand {
+  background: rgba(0, 0, 0, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  color: #94a3b8;
+  font-weight: 500;
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.pcv-brand-icon { font-size: 1.25rem; }
+
+.pcv-overall-status {
+  margin-left: auto;
+  padding: 0.375rem 1rem;
+  border-radius: 1.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.status-valid {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.status-invalid {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+/* Loading */
+.pcv-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+  gap: 1.25rem;
+}
+
+.pcv-loader {
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 3px solid rgba(99, 102, 241, 0.2);
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: pcv-spin 0.8s linear infinite;
+}
+
+@keyframes pcv-spin { to { transform: rotate(360deg); } }
+
+.pcv-loading p { font-size: 1.1rem; color: #94a3b8; margin: 0; }
+.pcv-loading small { font-size: 0.8rem; color: #475569; }
+
+/* Error */
+.pcv-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+  gap: 1rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+.pcv-error-icon { font-size: 4rem; }
+.pcv-error h2 { font-size: 1.5rem; color: #f87171; margin: 0; }
+.pcv-error p { color: #94a3b8; max-width: 400px; line-height: 1.6; }
+
+.pcv-cert-id-searched {
+  font-size: 0.875rem;
+  color: #64748b;
+  padding: 0.5rem 1rem;
+  background: rgba(255,255,255,0.04);
+  border-radius: 0.5rem;
+}
+
+.pcv-cert-id-searched code { color: #a78bfa; }
+
+/* Container */
+.pcv-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Status Banner */
+.pcv-status-banner {
+  border: 1px solid;
+  border-radius: 1.25rem;
+  padding: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.pcv-status-icon { font-size: 3rem; }
+
+.pcv-status-content { flex: 1; }
+
+.pcv-status-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin: 0 0 0.5rem;
+}
+
+.pcv-status-msg { color: #94a3b8; margin: 0; font-size: 0.95rem; }
+
+.pcv-score-wrap { margin-left: auto; }
+
+.pcv-score-circle {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 3px solid rgba(99, 102, 241, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+}
+
+.pcv-score-num {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  line-height: 1;
+}
+
+.pcv-score-label {
+  font-size: 0.6rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Certificate Image */
+.pcv-cert-image-wrap {}
+
+.pcv-section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #94a3b8;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pcv-cert-image-container {
+  position: relative;
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 2px solid rgba(99, 102, 241, 0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.pcv-cert-image {
+  width: 100%;
+  display: block;
+}
+
+.pcv-cert-image-overlay {
+  position: absolute;
+  bottom: 1.5rem;
+  right: 1.5rem;
+}
+
+.pcv-cert-seal {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border: 3px solid;
+}
+
+.valid-seal {
+  background: rgba(16, 185, 129, 0.9);
+  border-color: #10b981;
+  color: white;
+}
+
+.valid-seal span {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.invalid-seal {
+  background: rgba(239, 68, 68, 0.9);
+  border-color: #ef4444;
+  color: white;
+}
+
+.invalid-seal span { font-size: 1.5rem; font-weight: 700; }
+
+.pcv-cert-seal p { font-size: 0.5rem; font-weight: 700; text-transform: uppercase; margin: 0; text-align: center; line-height: 1.2; }
+
+/* Details Grid */
+.pcv-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .pcv-details-grid { grid-template-columns: 1fr; }
+}
+
+/* Cards */
+.pcv-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+}
+
+.pcv-card-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #a78bfa;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Info List */
+.pcv-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.pcv-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.pcv-info-label {
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+}
+
+.pcv-info-value {
+  font-size: 0.9rem;
+  color: #e2e8f0;
+}
+
+.pcv-highlight {
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  color: #e2e8f0 !important;
+}
+
+.pcv-info-desc { }
+.pcv-info-desc p { margin: 0; line-height: 1.6; font-weight: normal !important; font-size: 0.85rem !important; color: #94a3b8 !important; }
+
+/* Code */
+.pcv-code {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: #a78bfa;
+  background: rgba(139, 92, 246, 0.1);
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.375rem;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  word-break: break-all;
+  display: block;
+}
+
+.pcv-code-sm { font-size: 0.65rem; }
+
+/* Verification Checks */
+.pcv-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pcv-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  padding: 0.875rem;
+  border-radius: 0.75rem;
+}
+
+.pcv-check-pass {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.pcv-check-warn {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.pcv-check-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.pcv-check-pass .pcv-check-icon {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.pcv-check-warn .pcv-check-icon {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.pcv-check strong {
+  display: block;
+  font-size: 0.875rem;
+  color: #e2e8f0;
+  margin-bottom: 0.2rem;
+}
+
+.pcv-check p {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0;
+}
+
+.pcv-no-data { color: #64748b; font-size: 0.875rem; }
+
+/* Blockchain confirmed */
+.pcv-blockchain-confirmed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.875rem;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 1.5rem;
+  font-size: 0.75rem;
+  color: #34d399;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+/* Fraud Alert */
+.pcv-fraud-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 1rem;
+}
+
+.pcv-fraud-icon { font-size: 2rem; }
+
+.pcv-fraud-alert strong {
+  display: block;
+  font-size: 1rem;
+  color: #f87171;
+  margin-bottom: 0.375rem;
+}
+
+.pcv-fraud-alert p { color: #fca5a5; margin: 0; font-size: 0.875rem; line-height: 1.5; }
+
+/* Footer */
+.pcv-footer {
+  text-align: center;
+  padding: 2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pcv-footer p {
+  font-size: 0.8rem;
+  color: #475569;
+  margin: 0.25rem 0;
+}

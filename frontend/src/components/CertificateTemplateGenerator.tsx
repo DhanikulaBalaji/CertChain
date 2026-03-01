@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Button, Alert, Form, Row, Col } from 'react-bootstrap';
-import api from '../services/api';
+import { Alert, Button, Col, Row } from 'react-bootstrap';
 
 interface CertificateTemplateGeneratorProps {
   onTemplateGenerated?: (templateData: any) => void;
@@ -40,7 +39,7 @@ const CertificateTemplateGenerator: React.FC<CertificateTemplateGeneratorProps> 
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
 
-      setSuccess('Template downloaded successfully! 📥');
+      setSuccess('Template downloaded successfully!');
       
       if (onTemplateGenerated) {
         onTemplateGenerated({ downloaded: true });
@@ -66,7 +65,7 @@ David Brown,,david.brown@example.com,+1999888777`;
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(generateSampleData());
-      setSuccess('Sample data copied to clipboard! 📋');
+      setSuccess('Sample data copied to clipboard!');
     } catch (err) {
       setError('Failed to copy to clipboard');
     }
@@ -101,7 +100,7 @@ David Brown,,david.brown@example.com,+1999888777`;
               </>
             ) : (
               <>
-                📥 Download CSV Template
+                <i className="fas fa-download me-1"></i> Download CSV Template
               </>
             )}
           </Button>
@@ -112,13 +111,13 @@ David Brown,,david.brown@example.com,+1999888777`;
             onClick={copyToClipboard}
             className="w-100"
           >
-            📋 Copy Sample Data
+            <i className="fas fa-copy me-1"></i> Copy Sample Data
           </Button>
         </Col>
       </Row>
 
       <Alert variant="info" className="mb-0">
-        <Alert.Heading>📋 Template Format Guide</Alert.Heading>
+        <Alert.Heading><i className="fas fa-info-circle me-2"></i>Template Format Guide</Alert.Heading>
         <hr />
         <Row>
           <Col md={6}>
@@ -127,7 +126,7 @@ David Brown,,david.brown@example.com,+1999888777`;
               <li><code>recipient_name</code> - Full name of recipient</li>
             </ul>
             
-            <h6>📊 Optional Fields:</h6>
+            <h6><i className="fas fa-chart-bar me-1"></i> Optional Fields:</h6>
             <ul className="mb-2">
               <li><code>participant_id</code> - Custom ID (auto-generated if empty)</li>
               <li><code>email</code> - Email for notifications</li>
@@ -144,7 +143,7 @@ David Brown,,david.brown@example.com,+1999888777`;
             </ul>
             
             <small className="text-muted">
-              💡 <strong>Tip:</strong> Leave participant_id empty for auto-generation with rotating prefixes
+              <i className="fas fa-lightbulb me-1 text-warning"></i><strong>Tip:</strong> Leave participant_id empty for auto-generation with rotating prefixes
             </small>
           </Col>
         </Row>

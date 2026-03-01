@@ -39,6 +39,7 @@ class User(UserBase):
     id: int
     is_active: bool
     is_approved: bool
+    did_id: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -61,9 +62,19 @@ class User(UserBase):
         return str(role).lower()
 
 # Authentication Schemas
+class TokenUser(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    role: str
+    is_active: bool
+    is_approved: bool
+    did_id: Optional[str] = None
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+    user: Optional[TokenUser] = None
 
 class TokenData(BaseModel):
     email: Optional[str] = None
@@ -124,7 +135,8 @@ class CertificateBase(BaseModel):
 
 class CertificateCreate(CertificateBase):
     event_id: int
-    recipient_id: Optional[str] = None  # Changed from int to str to allow flexible IDs
+    recipient_id: Optional[str] = None  # Optional: email or user identifier for linking to wallet
+    recipient_email: Optional[str] = None  # Recipient email (used to set recipient_id for wallet)
 
 class CertificateResponse(CertificateBase):
     certificate_id: str
@@ -191,6 +203,9 @@ class ValidationResult(BaseModel):
     certificate: Optional[Certificate] = None
     details: dict
     timestamp: datetime
+    message: Optional[str] = None  # Human-readable message for frontend
+    certificate_id: Optional[str] = None  # For frontend display when certificate is present
+    validation_timestamp: Optional[datetime] = None  # Alias for frontend (same as timestamp)
 
 class ValidationLogCreate(BaseModel):
     certificate_id: int

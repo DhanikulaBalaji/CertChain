@@ -9,7 +9,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.auth import require_admin
 from app.models.database import User as UserModel
-from app.models.schemas import Response
+from app.models.schemas import Response, CertificateCreate
 
 router = APIRouter(prefix="/admin/certificates", tags=["Admin Certificate Generation"])
 
@@ -21,33 +21,20 @@ template_router = APIRouter(prefix="/templates", tags=["Template Operations"])
 
 @router.post("/generate-single", response_model=Response)
 async def admin_generate_single_certificate(
-    event_id: int = Form(...),
-    recipient_name: str = Form(...),
-    recipient_email: str = Form(...),
-    template_id: Optional[int] = Form(None),
+    certificate_data: CertificateCreate,
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_admin)
 ):
-    """Generate a single certificate (Admin endpoint for frontend compatibility)"""
+    """Generate a single certificate (Admin endpoint). Accepts JSON so event_id and recipient_email are correct per request (one email can have certs for multiple events)."""
     try:
-        # Import here to avoid circular imports
-        from app.api.certificates import generate_certificate
-        from app.models.schemas import CertificateCreate
-        
-        # Create certificate request
-        certificate_request = CertificateCreate(
-            recipient_name=recipient_name,
-            event_id=event_id,
-            recipient_id=None
-        )
-        
-        # Generate the certificate using the existing function
-        return await generate_certificate(
-            certificate=certificate_request,
+        from app.api.certificates import generate_single_certificate
+        return await generate_single_certificate(
+            certificate_data=certificate_data,
             db=db,
             current_user=current_user
         )
-        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

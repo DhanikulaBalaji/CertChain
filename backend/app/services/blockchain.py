@@ -8,6 +8,22 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Default 64-char hex dev key used when PRIVATE_KEY in .env is missing or invalid
+_DEFAULT_DEV_PRIVATE_KEY = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+
+def _normalize_and_validate_private_key(raw: str) -> Optional[str]:
+    """Return 64-char hex key if valid, else None."""
+    if not raw or not isinstance(raw, str):
+        return None
+    key = raw.strip()
+    if key.startswith("0x"):
+        key = key[2:]
+    if len(key) != 64 or not all(c in "0123456789abcdefABCDEF" for c in key):
+        return None
+    return key.lower()
+
+
 class BlockchainService:
     def __init__(self):
         """Initialize Web3 connection and account"""
@@ -15,33 +31,20 @@ class BlockchainService:
         self.w3 = None
         self.account = None
         self.contract = None
-        
+
         try:
             self.w3 = Web3(Web3.HTTPProvider(settings.ethereum_rpc_url))
-            
-            # Check if private key is valid (not the default placeholder)
-            if settings.private_key and settings.private_key != "your-ethereum-private-key":
-                try:
-                    # Handle private key with or without 0x prefix
-                    private_key = settings.private_key
-                    if private_key.startswith('0x'):
-                        private_key = private_key[2:]
-                    
-                    if len(private_key) == 64:
-                        self.account = Account.from_key(private_key)
-                        self.enabled = True
-                        logger.info("Blockchain service initialized with provided private key")
-                    else:
-                        raise ValueError(f"Invalid private key length: {len(private_key)}")
-                except Exception as e:
-                    logger.warning(f"Invalid private key provided: {e}")
-                    self.account = Account.create()
-                    logger.warning("Using generated account for development. Set valid PRIVATE_KEY in production.")
+
+            # Use PRIVATE_KEY from settings only if it's a valid 64-char hex key
+            private_key = _normalize_and_validate_private_key(getattr(settings, "private_key", None))
+            if private_key:
+                self.account = Account.from_key(private_key)
+                logger.info("Blockchain service initialized with private key")
             else:
-                # Create a new account for development
-                self.account = Account.create()
-                logger.warning("Using generated account for development. Set PRIVATE_KEY in production.")
-            
+                # Fallback: use default dev key so startup succeeds without .env fixes
+                self.account = Account.from_key(_DEFAULT_DEV_PRIVATE_KEY)
+                logger.info("Blockchain service initialized with default dev key (set PRIVATE_KEY in .env for production)")
+
             self.contract_address = settings.contract_address
             self.contract_abi = self._load_contract_abi()
             

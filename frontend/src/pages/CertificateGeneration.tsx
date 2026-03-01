@@ -207,7 +207,7 @@ const CertificateGeneration: React.FC = () => {
       const response = await api.post('/admin/certificates/generate-single', {
         event_id: parseInt(singleForm.eventId),
         recipient_name: singleForm.recipientName,
-        recipient_id: null
+        recipient_email: singleForm.recipientEmail?.trim() || undefined
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });

@@ -117,7 +117,11 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if not self.enabled:
             return await call_next(request)
-            
+
+        # Always pass OPTIONS preflight through — CORS middleware handles it
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # Validate request size
         if request.headers.get("content-length"):
             content_length = int(request.headers["content-length"])
