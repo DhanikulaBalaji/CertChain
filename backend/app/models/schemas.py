@@ -135,8 +135,13 @@ class CertificateBase(BaseModel):
 
 class CertificateCreate(CertificateBase):
     event_id: int
-    recipient_id: Optional[str] = None  # Optional: email or user identifier for linking to wallet
-    recipient_email: Optional[str] = None  # Recipient email (used to set recipient_id for wallet)
+    recipient_id: Optional[str] = None
+    recipient_email: Optional[str] = None
+    # Certificate display fields (printed on the PDF)
+    issuer_name: Optional[str] = None          # e.g. "Dr. R. Raja Sekar"
+    issuer_designation: Optional[str] = None   # e.g. "Faculty Co-Ordinator"
+    club_name: Optional[str] = None            # e.g. "GFG KARE Student Chapter"
+    department: Optional[str] = None           # e.g. "Department of Computer Science"
 
 class CertificateResponse(CertificateBase):
     certificate_id: str

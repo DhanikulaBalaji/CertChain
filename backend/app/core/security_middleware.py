@@ -88,8 +88,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             return response
             
         # Security headers from configuration
-        security_headers = security_settings.SECURITY_HEADERS
-        
+        security_headers = dict(security_settings.SECURITY_HEADERS)
+
+        # Static files (PDFs, images) must be embeddable in iframes on the
+        # frontend.  Remove the hard frame-blocking headers for /static/ paths.
+        if request.url.path.startswith("/static/"):
+            security_headers.pop("X-Frame-Options", None)
+            # Allow framing from our known frontend origins
+            security_headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "img-src 'self' data:; "
+                "frame-ancestors http://localhost:3000 http://10.109.242.73:3000 *;"
+            )
+
         for header, value in security_headers.items():
             response.headers[header] = value
         

@@ -49,11 +49,16 @@ class Settings(BaseSettings):
     super_admin_email: str = "admin@example.com"
     super_admin_password: str = "admin123"
     
-    # CORS Configuration
-    cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]
+    # CORS Configuration — include LAN IP so mobile devices can reach the API
+    cors_origins: List[str] = [
+        "http://localhost:3000",
+        "https://localhost:3000",
+        "http://10.109.242.73:3000",
+    ]
 
-    # Public base URL for QR code generation (points to the frontend)
-    base_url: str = "http://localhost:3000"
+    # Public base URL for QR code generation (points to the frontend).
+    # Using LAN IP so QR codes work when scanned from a mobile device.
+    base_url: str = "http://10.109.242.73:3000"
 
     class Config:
         env_file = ".env"

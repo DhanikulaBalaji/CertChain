@@ -387,12 +387,17 @@ async def generate_single_certificate(
         
         # Prepare certificate generation data
         cert_gen_data = {
-            'recipient_name': certificate_data.recipient_name,
-            'participant_id': participant_id,
-            'event_name': event.name,
-            'event_date': event.date.strftime('%Y-%m-%d'),
-            'event_id': event.id,
-            'template_path': event.template_path
+            'recipient_name':    certificate_data.recipient_name,
+            'participant_id':    participant_id,
+            'event_name':        event.name,
+            'event_date':        event.date.strftime('%Y-%m-%d'),
+            'event_id':          event.id,
+            'template_path':     event.template_path,
+            'issuer_name':       certificate_data.issuer_name or current_user.full_name,
+            'issuer_designation': certificate_data.issuer_designation or 'Issuing Authority',
+            'club_name':         certificate_data.club_name or '',
+            'department':        certificate_data.department or '',
+            'organization':      'KARE',
         }
         
         # Generate certificate
@@ -886,10 +891,10 @@ async def revoke_certificate(
         
         # Send notification
         notification_service = NotificationService(db)
-        await notification_service.send_notification(
+        notification_service.create_user_notification(
             user_id=current_user.id,
             title="Certificate Revoked",
-            message=f"Certificate for {certificate.recipient_name} has been revoked",
+            message=f"Certificate for {certificate.recipient_name} has been revoked.",
             notification_type="certificate_revoked"
         )
         
@@ -970,12 +975,17 @@ async def reissue_certificate(
         
         # Prepare certificate generation data
         cert_gen_data = {
-            'recipient_name': certificate.recipient_name,
-            'participant_id': certificate.participant_id or generate_participant_id(),
-            'event_name': certificate.event.name,
-            'event_date': certificate.event.date.strftime('%Y-%m-%d'),
-            'event_id': certificate.event.id,
-            'template_path': certificate.event.template_path
+            'recipient_name':    certificate.recipient_name,
+            'participant_id':    certificate.participant_id or generate_participant_id(),
+            'event_name':        certificate.event.name,
+            'event_date':        certificate.event.date.strftime('%Y-%m-%d'),
+            'event_id':          certificate.event.id,
+            'template_path':     certificate.event.template_path,
+            'issuer_name':       current_user.full_name,
+            'issuer_designation': 'Issuing Authority',
+            'club_name':         getattr(certificate, 'club_name', '') or '',
+            'department':        getattr(certificate, 'department', '') or '',
+            'organization':      'KARE',
         }
         
         # Generate new certificate files
@@ -1006,10 +1016,10 @@ async def reissue_certificate(
         
         # Send notification
         notification_service = NotificationService(db)
-        await notification_service.send_notification(
+        notification_service.create_user_notification(
             user_id=current_user.id,
             title="Certificate Re-issued",
-            message=f"Certificate for {certificate.recipient_name} has been re-issued",
+            message=f"Certificate for {certificate.recipient_name} has been re-issued.",
             notification_type="certificate_reissued"
         )
         

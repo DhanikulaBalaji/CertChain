@@ -571,7 +571,7 @@ const AdminDashboard: React.FC = () => {
               )}
               <Button 
                 variant="primary" 
-                onClick={() => navigate('/create-event')}
+                onClick={() => setShowEventModal(true)}
                 className="btn-lg"
               >
                 <i className="fas fa-plus me-2"></i>

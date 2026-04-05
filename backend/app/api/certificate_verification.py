@@ -135,10 +135,20 @@ class CertificateVerificationService:
                 result["ownership_pending"] = True
                 result["challenge"] = challenge_uid
                 result["verification_status"] = "Authentic"
+                result["did_info"] = {
+                    "did_id": recipient.did_id,
+                    "algorithm": "ECDSA",
+                    "curve": "SECP256R1 (P-256)",
+                    "hash_function": "SHA-256",
+                    "key_type": "EC Public Key",
+                    "did_registered": True,
+                }
             else:
                 result["ownership_pending"] = False
+                result["did_info"] = {"did_registered": False}
         else:
             result["ownership_pending"] = False
+            result["did_info"] = {"did_registered": False}
 
         return result
 
@@ -823,6 +833,12 @@ async def complete_ownership_verification(
             "success": False,
             "verification_status": "Authentic but Ownership Failed",
             "message": "Wallet could not sign (no private key or signing failed)",
+            "steps": [
+                {"step": "DID Identity Check",    "status": "pass",  "detail": f"DID: {cert.recipient.did_id[:28]}…"},
+                {"step": "Challenge Issuance",    "status": "pass",  "detail": f"UUID challenge: {challenge[:16]}…"},
+                {"step": "Cryptographic Signing", "status": "fail",  "detail": "Private key not available for signing"},
+                {"step": "Ownership Confirmed",   "status": "fail",  "detail": "Cannot confirm ownership"},
+            ],
         }
 
     valid = did_verify_signature(
@@ -830,16 +846,35 @@ async def complete_ownership_verification(
         signature,
         challenge,
     )
+
+    sig_snippet = signature[:24] + "…" if len(signature) > 24 else signature
+    did_snippet  = cert.recipient.did_id[:28] + "…" if cert.recipient.did_id and len(cert.recipient.did_id) > 28 else cert.recipient.did_id
+
     if valid:
         return {
             "success": True,
             "verification_status": "Authentic and Ownership Verified",
-            "message": "Certificate is valid and ownership verified via DID.",
+            "message": "Certificate ownership cryptographically verified via DID.",
+            "did_id": cert.recipient.did_id,
+            "algorithm": "ECDSA / SECP256R1",
+            "hash_function": "SHA-256",
+            "steps": [
+                {"step": "DID Identity Check",    "status": "pass", "detail": f"DID registered: {did_snippet}"},
+                {"step": "Challenge Issuance",    "status": "pass", "detail": f"Challenge UUID: {challenge[:16]}…"},
+                {"step": "Cryptographic Signing", "status": "pass", "detail": f"ECDSA P-256 signature: {sig_snippet}"},
+                {"step": "Ownership Confirmed",   "status": "pass", "detail": "Public key signature verified successfully"},
+            ],
         }
     return {
         "success": False,
         "verification_status": "Authentic but Ownership Failed",
-        "message": "Signature verification failed.",
+        "message": "Signature verification failed — DID ownership could not be confirmed.",
+        "steps": [
+            {"step": "DID Identity Check",    "status": "pass", "detail": f"DID registered: {did_snippet}"},
+            {"step": "Challenge Issuance",    "status": "pass", "detail": f"Challenge UUID: {challenge[:16]}…"},
+            {"step": "Cryptographic Signing", "status": "pass", "detail": f"Signature produced: {sig_snippet}"},
+            {"step": "Ownership Confirmed",   "status": "fail", "detail": "Signature did not match public key"},
+        ],
     }
 
 

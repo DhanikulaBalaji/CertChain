@@ -56,7 +56,7 @@ const Modal: React.FC<{ show: boolean; onClose: () => void; title: string; child
 const UserDashboard: React.FC = () => {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  
   const [certificateId, setCertificateId]           = useState('');
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [loading, setLoading]                       = useState(false);
@@ -208,7 +208,7 @@ const UserDashboard: React.FC = () => {
           <div style={{ display:'flex', alignItems:'center', gap: 8, padding:'8px 16px', borderRadius:100, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.3)' }}>
             <span className="ds-dot-live" />
             <span style={{ fontSize:'0.8rem', fontWeight:700, color:'#34d399' }}>Blockchain Secured</span>
-          </div>
+      </div>
         </motion.div>
 
         {/* ── Alerts ── */}
@@ -240,7 +240,7 @@ const UserDashboard: React.FC = () => {
               <span className="d-none d-sm-inline">{m.label}</span>
             </button>
           ))}
-        </div>
+                  </div>
 
         {/* ── Method panel ── */}
         <motion.div
@@ -255,7 +255,7 @@ const UserDashboard: React.FC = () => {
                   <i className="fas fa-id-card" style={{ color:'var(--c-indigo-lt)' }} /> Certificate ID Lookup
                 </h2>
                 <p style={{ color:'var(--c-text-3)', fontSize:'0.85rem', margin:0 }}>Enter the certificate ID printed on the document (e.g. CERT-ABC123456789)</p>
-              </div>
+                        </div>
               <div style={{ display:'flex', gap:10 }}>
                 <input className="ds-input" type="text" value={certificateId}
                   onChange={e => setCertificateId(e.target.value)}
@@ -267,7 +267,7 @@ const UserDashboard: React.FC = () => {
                   whileHover={{ scale:1.03 }} whileTap={{ scale:0.97 }}>
                   {loading ? <><span className="ds-spinner" /> Verifying…</> : <><i className="fas fa-magnifying-glass" /> Verify</>}
                 </motion.button>
-              </div>
+                        </div>
             </>
           )}
 
@@ -509,7 +509,7 @@ const UserDashboard: React.FC = () => {
               </div>
               <button className="ds-btn ds-btn-ghost ds-btn-sm"
                 onClick={() => { setShowModal(false); setOwnershipResult(null); setClaimedToWallet(false); }}>
-                Close
+            Close
               </button>
             </div>
           </div>

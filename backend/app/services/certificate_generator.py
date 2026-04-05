@@ -12,6 +12,9 @@ from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.lib.colors import HexColor, white, black, Color
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Paragraph
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 from PIL import Image
 import uuid
 import logging
@@ -50,351 +53,493 @@ class CertificateGenerator:
         return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     def create_qr_code(self, data: dict, certificate_id: str):
-        """Return (qr_path, qr_json_string) for the certificate."""
+        """Return (qr_path, qr_json_string) for the certificate.
+
+        The QR image encodes a plain verify URL so any phone camera / QR app
+        opens it directly in the browser.  The full JSON payload is kept as
+        qr_data for database storage and the frontend scanner fallback.
+        """
         try:
             base_url = getattr(settings, 'base_url', 'http://localhost:3000').rstrip('/')
             verify_url = f"{base_url}/verify/{certificate_id}"
+
+            # Full JSON payload stored in the database / returned in API responses
             payload = {
-                'verify_url': verify_url,
+                'verify_url':     verify_url,
                 'certificate_id': certificate_id,
                 'recipient_name': data.get('recipient_name'),
-                'event_name': data.get('event_name'),
-                'date': data.get('event_date'),
-                'hash': data.get('hash'),
-                'blockchain_tx': data.get('blockchain_tx', f"local_{certificate_id}"),
-                'timestamp': datetime.now().isoformat(),
+                'event_name':     data.get('event_name'),
+                'date':           data.get('event_date'),
+                'hash':           data.get('hash'),
+                'blockchain_tx':  data.get('blockchain_tx', f"local_{certificate_id}"),
+                'timestamp':      datetime.now().isoformat(),
             }
             qr_data = json.dumps(payload, sort_keys=True)
 
+            # ── QR image encodes ONLY the plain URL ──────────────────────────
+            # Plain URL → every phone camera / QR scanner opens it in browser.
             qr = qrcode.QRCode(
                 version=2,
                 error_correction=qrcode.constants.ERROR_CORRECT_M,
                 box_size=10,
                 border=3,
             )
-            qr.add_data(qr_data)
+            qr.add_data(verify_url)   # <-- plain URL, not JSON
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
 
             qr_path = os.path.join(self.certificates_dir, f"qr_{certificate_id}.png")
             img.save(qr_path)
-            return qr_path, qr_data
+            return qr_path, qr_data   # qr_data (JSON) kept for DB / API use
         except Exception as e:
             logger.error(f"QR code error: {e}")
             return None, None
 
-    # ── PDF Drawing Helpers ────────────────────────────────────────────────────
+    # ── Corner chevron accent (all 4 corners) ─────────────────────────────────
 
-    def _draw_background_and_borders(self, c, W, H):
-        """Full background, outer/inner borders, and overall page frame."""
-        # Cream background
-        c.setFillColor(CREAM)
-        c.rect(0, 0, W, H, fill=1, stroke=0)
+    def _draw_corner_chevron(self, c, corner: str, W: float, H: float, size: float = 90):
+        """
+        Draw a large navy right-angle triangle with a gold diagonal stripe
+        at the specified corner ('tl', 'tr', 'bl', 'br').
+        """
+        gold_w = size * 0.17   # width of the gold stripe
 
-        # Subtle off-white inner field
-        c.setFillColor(OFFWHITE)
-        c.rect(18*mm, 12*mm, W - 36*mm, H - 24*mm, fill=1, stroke=0)
+        if corner == 'tl':
+            ox, oy = 0, H
+            pts_navy  = [(ox, oy), (ox + size, oy), (ox, oy - size)]
+            # gold stripe: thin band along hypotenuse
+            pts_gold  = [
+                (ox + size - gold_w, oy),
+                (ox + size,          oy),
+                (ox,                 oy - size),
+                (ox,                 oy - size + gold_w),
+            ]
+        elif corner == 'tr':
+            ox, oy = W, H
+            pts_navy  = [(ox, oy), (ox - size, oy), (ox, oy - size)]
+            pts_gold  = [
+                (ox - size + gold_w, oy),
+                (ox - size,          oy),
+                (ox,                 oy - size),
+                (ox,                 oy - size + gold_w),
+            ]
+        elif corner == 'bl':
+            ox, oy = 0, 0
+            pts_navy  = [(ox, oy), (ox + size, oy), (ox, oy + size)]
+            pts_gold  = [
+                (ox + size - gold_w, oy),
+                (ox + size,          oy),
+                (ox,                 oy + size),
+                (ox,                 oy + size - gold_w),
+            ]
+        else:  # 'br'
+            ox, oy = W, 0
+            pts_navy  = [(ox, oy), (ox - size, oy), (ox, oy + size)]
+            pts_gold  = [
+                (ox - size + gold_w, oy),
+                (ox - size,          oy),
+                (ox,                 oy + size),
+                (ox,                 oy + size - gold_w),
+            ]
 
-        # Outer gold border
-        c.setStrokeColor(GOLD)
-        c.setLineWidth(2.5)
-        c.rect(14*mm, 10*mm, W - 28*mm, H - 20*mm, fill=0, stroke=1)
+        def _poly(pts, color):
+            c.setFillColor(color)
+            p = c.beginPath()
+            p.moveTo(pts[0][0], pts[0][1])
+            for x, y in pts[1:]:
+                p.lineTo(x, y)
+            p.close()
+            c.drawPath(p, fill=1, stroke=0)
 
-        # Inner thin navy border
-        c.setStrokeColor(NAVY)
-        c.setLineWidth(0.8)
-        c.rect(17*mm, 13*mm, W - 34*mm, H - 26*mm, fill=0, stroke=1)
+        _poly(pts_navy, NAVY)
+        _poly(pts_gold, GOLD)
 
-    def _draw_corner_accent_topleft(self, c, W, H):
-        """Navy triangle + gold stripe — top-left corner."""
-        size = 105
-        ox, oy = 14*mm, H - 10*mm   # outer corner (top-left of border)
+    # ── Signature block ────────────────────────────────────────────────────────
 
-        # Navy filled triangle
-        c.setFillColor(NAVY)
-        p = c.beginPath()
-        p.moveTo(ox, oy)
-        p.lineTo(ox + size, oy)
-        p.lineTo(ox, oy - size)
-        p.close()
-        c.drawPath(p, fill=1, stroke=0)
-
-        # Gold diagonal stripe inside the triangle
-        c.setFillColor(GOLD)
-        offset = 14
-        p = c.beginPath()
-        p.moveTo(ox + size - offset, oy)
-        p.lineTo(ox + size, oy)
-        p.lineTo(ox, oy - size)
-        p.lineTo(ox, oy - size + offset)
-        p.close()
-        c.drawPath(p, fill=1, stroke=0)
-
-    def _draw_corner_accent_bottomright(self, c, W, H):
-        """Navy triangle + gold stripe — bottom-right corner."""
-        size = 105
-        ox, oy = W - 14*mm, 10*mm   # outer corner (bottom-right of border)
-
-        c.setFillColor(NAVY)
-        p = c.beginPath()
-        p.moveTo(ox, oy)
-        p.lineTo(ox - size, oy)
-        p.lineTo(ox, oy + size)
-        p.close()
-        c.drawPath(p, fill=1, stroke=0)
-
-        c.setFillColor(GOLD)
-        offset = 14
-        p = c.beginPath()
-        p.moveTo(ox - size + offset, oy)
-        p.lineTo(ox - size, oy)
-        p.lineTo(ox, oy + size)
-        p.lineTo(ox, oy + size - offset)
-        p.close()
-        c.drawPath(p, fill=1, stroke=0)
-
-    def _draw_corner_accent_topright(self, c, W, H):
-        """Thin gold diagonal accent strip — top-right."""
-        size = 65
-        ox, oy = W - 14*mm, H - 10*mm
-
-        c.setFillColor(GOLD)
-        offset = 10
-        p = c.beginPath()
-        p.moveTo(ox - size, oy)
-        p.lineTo(ox - size + offset, oy)
-        p.lineTo(ox, oy - size + offset)
-        p.lineTo(ox, oy - size)
-        p.close()
-        c.drawPath(p, fill=1, stroke=0)
-
-    def _draw_corner_accent_bottomleft(self, c, W, H):
-        """Thin gold diagonal accent strip — bottom-left."""
-        size = 65
-        ox, oy = 14*mm, 10*mm
-
-        c.setFillColor(GOLD)
-        offset = 10
-        p = c.beginPath()
-        p.moveTo(ox + size, oy)
-        p.lineTo(ox + size - offset, oy)
-        p.lineTo(ox, oy + size - offset)
-        p.lineTo(ox, oy + size)
-        p.close()
-        c.drawPath(p, fill=1, stroke=0)
-
-    def _draw_top_header_bar(self, c, W, H):
-        """Thin navy band across the top inside the border (contains org name)."""
-        bar_y = H - 10*mm - 18*mm
-        bar_h = 10*mm
-        bar_x = 14*mm
-        bar_w = W - 28*mm
-
-        c.setFillColor(NAVY)
-        c.rect(bar_x, bar_y, bar_w, bar_h, fill=1, stroke=0)
-
-        c.setFillColor(GOLD)
-        c.setFont("Helvetica-Bold", 8)
-        label = "CERTCHAIN  ·  BLOCKCHAIN CERTIFICATE VERIFICATION SYSTEM"
-        c.drawCentredString(W / 2, bar_y + 3.2*mm, label)
-
-    def _draw_gold_seal(self, c, cx, cy, r=22):
-        """Decorative multi-ring gold medallion at given centre."""
-        # Outer ring
-        c.setFillColor(GOLD)
-        c.circle(cx, cy, r, fill=1, stroke=0)
-
-        c.setFillColor(CREAM)
-        c.circle(cx, cy, r - 4, fill=1, stroke=0)
-
-        c.setFillColor(GOLD)
-        c.circle(cx, cy, r - 7, fill=1, stroke=0)
-
-        c.setFillColor(NAVY)
-        c.circle(cx, cy, r - 11, fill=1, stroke=0)
-
-        # Star / tick symbol
-        c.setFillColor(GOLD)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawCentredString(cx, cy - 3.5, "✓")
-
-    def _draw_decorative_divider(self, c, W, y_pos, width_ratio=0.55):
-        """Gold ornamental divider line with diamond at centre."""
-        line_w = W * width_ratio
-        x1 = (W - line_w) / 2
-        x2 = x1 + line_w
-        cx = W / 2
-
-        c.setStrokeColor(GOLD)
-        c.setLineWidth(1)
-        c.line(x1, y_pos, cx - 6, y_pos)
-        c.line(cx + 6, y_pos, x2, y_pos)
-
-        # Diamond
-        c.setFillColor(GOLD)
-        d = 4
-        p = c.beginPath()
-        p.moveTo(cx, y_pos + d)
-        p.lineTo(cx + d, y_pos)
-        p.lineTo(cx, y_pos - d)
-        p.lineTo(cx - d, y_pos)
-        p.close()
-        c.drawPath(p, fill=1, stroke=0)
-
-    def _center_text(self, c, text, x, y, font, size, color):
-        c.setFillColor(color)
-        c.setFont(font, size)
-        c.drawCentredString(x, y, text)
-
-    def _draw_signature_block(self, c, x, label, role, y_base):
-        """Single signature block: line + name + role."""
-        line_w = 55*mm
+    def _draw_sig_block(self, c, cx: float, label: str, role: str, y_base: float):
+        """Signature line + name + role."""
+        line_w = 52 * mm
         c.setStrokeColor(GREY_DARK)
-        c.setLineWidth(0.8)
-        c.line(x - line_w / 2, y_base, x + line_w / 2, y_base)
+        c.setLineWidth(0.7)
+        c.line(cx - line_w / 2, y_base, cx + line_w / 2, y_base)
 
-        c.setFillColor(GREY_DARK)
+        c.setFillColor(NAVY_MID)
         c.setFont("Helvetica-Bold", 9)
-        c.drawCentredString(x, y_base - 4.5*mm, label)
+        c.drawCentredString(cx, y_base - 4.5 * mm, label)
 
         c.setFillColor(GREY_MID)
         c.setFont("Helvetica", 8)
-        c.drawCentredString(x, y_base - 7.5*mm, role)
+        c.drawCentredString(cx, y_base - 8.5 * mm, role)
 
-    # ── Main PDF Generator ─────────────────────────────────────────────────────
+    # ── Template-background overlay ────────────────────────────────────────────
 
-    def generate_pdf_certificate(self, cert_info: Dict[str, Any], qr_path: Optional[str] = None) -> Optional[str]:
-        """Generate a beautiful A4 landscape PDF certificate."""
+    def _generate_with_template(self, cert_info: Dict[str, Any],
+                                 template_path: str,
+                                 qr_path: Optional[str] = None) -> Optional[str]:
+        """
+        When an admin has uploaded a custom background image for an event,
+        use that image as the full-page background and overlay ALL certificate
+        fields (name, event, registration number, date, QR, cert-ID) on top.
+        """
         try:
-            cert_id    = cert_info['certificate_id']
-            name       = cert_info.get('recipient_name', 'Recipient Name')
-            event      = cert_info.get('event_name', 'Event Name')
-            event_date = cert_info.get('event_date', '')
-            issued     = cert_info.get('issued_date', datetime.now().strftime('%B %d, %Y'))
-            cert_hash  = cert_info.get('hash', '')
-            issuer     = cert_info.get('issuer_name', 'Administrator')
-            org        = cert_info.get('organization', 'KL University')
+            cert_id      = cert_info['certificate_id']
+            name         = cert_info.get('recipient_name', '')
+            event        = cert_info.get('event_name', '')
+            event_date   = cert_info.get('event_date', '')
+            participant  = cert_info.get('participant_id', '')
+            issuer       = cert_info.get('issuer_name', 'Administrator')
+            issuer_desig = cert_info.get('issuer_designation', 'Issuing Authority')
+            club         = cert_info.get('club_name', '')
+            department   = cert_info.get('department', '')
+            org          = cert_info.get('organization', 'KARE')
+            cert_hash    = cert_info.get('hash', '')
 
-            # Format dates nicely
             def fmt_date(d):
+                if not d:
+                    return ''
                 try:
-                    return datetime.strptime(str(d), '%Y-%m-%d').strftime('%B %d, %Y')
+                    return datetime.strptime(str(d).split('T')[0], '%Y-%m-%d').strftime('%d %B %Y')
                 except Exception:
                     return str(d)
 
             event_date_fmt  = fmt_date(event_date)
-            issued_date_fmt = fmt_date(issued) if issued else datetime.now().strftime('%B %d, %Y')
+            issued_date_fmt = datetime.now().strftime('%d-%m-%Y')
+
+            pdf_path = os.path.join(self.certificates_dir, f"cert_{cert_id}.pdf")
+            W, H = landscape(A4)
+            c = rl_canvas.Canvas(pdf_path, pagesize=(W, H))
+            c.setTitle(f"Certificate – {name}")
+
+            # ── Full-page template background ──
+            c.drawImage(ImageReader(template_path), 0, 0, W, H,
+                        preserveAspectRatio=False, mask='auto')
+
+            # ── Helper: draw text with a subtle white halo so it's readable
+            #    on any background colour ──
+            def draw_with_halo(text, x, y, font, size, fill_color, centered=True):
+                c.setFont(font, size)
+                c.setFillColor(white)
+                offsets = [(-1, -1), (1, -1), (-1, 1), (1, 1)]
+                for ox, oy in offsets:
+                    if centered:
+                        c.drawCentredString(x + ox, y + oy, text)
+                    else:
+                        c.drawString(x + ox, y + oy, text)
+                c.setFillColor(fill_color)
+                if centered:
+                    c.drawCentredString(x, y, text)
+                else:
+                    c.drawString(x, y, text)
+
+            # ── Recipient name — large, centred, ~54 % up the page ──
+            name_y    = H * 0.54
+            name_font = "Helvetica-Bold"
+            name_size = 36
+            while c.stringWidth(name, name_font, name_size) > W * 0.62 and name_size > 18:
+                name_size -= 2
+            draw_with_halo(name, W / 2, name_y, name_font, name_size, NAVY)
+
+            # Underline
+            name_w = c.stringWidth(name, name_font, name_size)
+            c.setStrokeColor(NAVY)
+            c.setLineWidth(1)
+            c.line(W / 2 - name_w / 2 - 12, name_y - 2.5 * mm,
+                   W / 2 + name_w / 2 + 12, name_y - 2.5 * mm)
+
+            # ── Registration number ──
+            reg_y = name_y - 9 * mm
+            if participant:
+                draw_with_halo(f"Registration No: {participant}",
+                               W / 2, reg_y, "Helvetica", 11, GREY_DARK)
+            else:
+                reg_y = name_y - 2 * mm   # collapse gap
+
+            # ── Event name ──
+            event_y    = reg_y - 12 * mm
+            event_font = "Helvetica-Bold"
+            event_size = 18
+            while c.stringWidth(event, event_font, event_size) > W * 0.58 and event_size > 10:
+                event_size -= 1
+            draw_with_halo(event, W / 2, event_y, event_font, event_size, NAVY_MID)
+
+            # ── Date line ──
+            date_y = event_y - 8 * mm
+            if event_date_fmt:
+                date_str = f"Event Date: {event_date_fmt}   ·   Certificate Issued: {issued_date_fmt}"
+            else:
+                date_str = f"Certificate Issued: {issued_date_fmt}"
+            draw_with_halo(date_str, W / 2, date_y, "Helvetica", 10, GREY_DARK)
+
+            # ── Description line ──
+            desc_y    = date_y - 7 * mm
+            reg_part  = f" (Reg. No: {participant})" if participant else ""
+            org_parts = [p for p in [club, department, org] if p]
+            organiser = ", ".join(org_parts) if org_parts else org
+            desc      = f"for his/her active participation in {event} organized by {organiser}{reg_part}."
+            c.setFont("Helvetica", 9.5)
+            if c.stringWidth(desc, "Helvetica", 9.5) <= W * 0.70:
+                draw_with_halo(desc, W / 2, desc_y, "Helvetica", 9.5, GREY_DARK)
+
+            # ── QR code — bottom-right ──
+            qr_size = 58
+            qr_x    = W - 18 * mm - qr_size
+            qr_y    = 8 * mm
+            if qr_path and os.path.exists(qr_path):
+                c.drawImage(ImageReader(qr_path), qr_x, qr_y,
+                            width=qr_size, height=qr_size,
+                            preserveAspectRatio=True, mask='auto')
+                c.setFillColor(GREY_DARK)
+                c.setFont("Helvetica", 6)
+                c.drawCentredString(qr_x + qr_size / 2, qr_y - 3 * mm, "Scan to Verify")
+
+            # ── Certificate ID + SHA-256 — bottom-left ──
+            c.setFillColor(GREY_DARK)
+            c.setFont("Helvetica", 6.5)
+            c.drawString(14 * mm, 12 * mm, f"ID: {cert_id}")
+            if cert_hash:
+                c.drawString(14 * mm, 8 * mm, f"SHA-256: {cert_hash[:32]}…")
+
+            c.save()
+            logger.info(f"Template-based certificate generated: {pdf_path}")
+            return pdf_path
+
+        except Exception as e:
+            logger.error(f"Template-based PDF generation error: {e}", exc_info=True)
+            return None
+
+    # ── Main PDF Generator ─────────────────────────────────────────────────────
+
+    def generate_pdf_certificate(self, cert_info: Dict[str, Any], qr_path: Optional[str] = None) -> Optional[str]:
+        """Generate a professional certificate in GEEKFEST/academic style.
+        If a custom template background has been uploaded for the event, it is
+        used as the full-page background and all fields are overlaid on top.
+        """
+        # ── If admin uploaded a custom template background, use it ──
+        template_path = cert_info.get('template_path', '')
+        if template_path and os.path.exists(str(template_path)):
+            return self._generate_with_template(cert_info, str(template_path), qr_path)
+
+        try:
+            cert_id      = cert_info['certificate_id']
+            name         = cert_info.get('recipient_name', 'Recipient Name')
+            event        = cert_info.get('event_name', 'Event Name')
+            event_date   = cert_info.get('event_date', '')
+            participant  = cert_info.get('participant_id', '')
+            cert_hash    = cert_info.get('hash', '')
+            issuer       = cert_info.get('issuer_name', 'Administrator')
+            issuer_desig = cert_info.get('issuer_designation', 'Issuing Authority')
+            club         = cert_info.get('club_name', '')
+            department   = cert_info.get('department', '')
+            org          = cert_info.get('organization', 'KARE')
+
+            def fmt_date(d):
+                if not d:
+                    return ''
+                try:
+                    return datetime.strptime(str(d).split('T')[0], '%Y-%m-%d').strftime('%d %B %Y')
+                except Exception:
+                    return str(d)
+
+            event_date_fmt  = fmt_date(event_date) or ''
+            issued_date_fmt = datetime.now().strftime('%d-%m-%Y')
 
             pdf_path = os.path.join(self.certificates_dir, f"cert_{cert_id}.pdf")
 
             W, H = landscape(A4)   # 841.89 x 595.28 pts
-
             c = rl_canvas.Canvas(pdf_path, pagesize=(W, H))
             c.setTitle(f"Certificate – {name}")
 
-            # ── Background & frame ──
-            self._draw_background_and_borders(c, W, H)
+            # ── 1. White background ──
+            c.setFillColor(white)
+            c.rect(0, 0, W, H, fill=1, stroke=0)
 
-            # ── Corner geometric accents ──
-            self._draw_corner_accent_topleft(c, W, H)
-            self._draw_corner_accent_bottomright(c, W, H)
-            self._draw_corner_accent_topright(c, W, H)
-            self._draw_corner_accent_bottomleft(c, W, H)
+            # ── 2. Corner chevrons ──
+            chevron = 95
+            self._draw_corner_chevron(c, 'tl', W, H, chevron)
+            self._draw_corner_chevron(c, 'tr', W, H, chevron)
+            self._draw_corner_chevron(c, 'bl', W, H, chevron)
+            self._draw_corner_chevron(c, 'br', W, H, chevron)
 
-            # ── Top org bar ──
-            self._draw_top_header_bar(c, W, H)
-
-            # ── CERTIFICATE title ──
-            title_y = H - 10*mm - 18*mm - 14*mm
-            self._center_text(c, "CERTIFICATE", W/2, title_y, "Helvetica-Bold", 46, NAVY)
-
-            subtitle_y = title_y - 12*mm
-            # Letter-spaced "OF ACHIEVEMENT" — simulate with spacing
-            c.setFillColor(GOLD)
-            c.setFont("Helvetica", 14)
-            subtitle = "O F   A C H I E V E M E N T"
-            c.drawCentredString(W/2, subtitle_y, subtitle)
-
-            # ── Gold divider below subtitle ──
-            div1_y = subtitle_y - 6*mm
-            self._draw_decorative_divider(c, W, div1_y, 0.45)
-
-            # ── "This certificate is proudly presented to" ──
-            pres_y = div1_y - 9*mm
-            self._center_text(c, "This certificate is proudly presented to", W/2, pres_y,
-                               "Helvetica-Oblique", 11, GREY_DARK)
-
-            # ── Recipient name ──
-            name_y = pres_y - 16*mm
-            self._center_text(c, name, W/2, name_y, "Times-BoldItalic", 38, NAVY)
-
-            # Gold underline beneath name
-            name_ul_y = name_y - 3*mm
-            name_w = c.stringWidth(name, "Times-BoldItalic", 38)
-            ul_x1 = W/2 - name_w/2 - 10
-            ul_x2 = W/2 + name_w/2 + 10
-            c.setStrokeColor(GOLD)
+            # ── 3. Outer thin navy border ──
+            c.setStrokeColor(NAVY)
             c.setLineWidth(1.2)
-            c.line(ul_x1, name_ul_y, ul_x2, name_ul_y)
+            c.rect(9 * mm, 7 * mm, W - 18 * mm, H - 14 * mm, fill=0, stroke=1)
 
-            # ── "For successfully participating in" ──
-            for_y = name_ul_y - 8*mm
-            self._center_text(c, "For successfully participating in", W/2, for_y,
-                               "Helvetica", 11, GREY_DARK)
+            # ── 4. TOP HEADER — three columns ──────────────────────────────────
+            header_top = H - 9 * mm        # top of safe area
+            header_h   = 26 * mm
+            header_bot = header_top - header_h
 
-            # ── Event name ──
-            event_y = for_y - 9*mm
-            self._center_text(c, event, W/2, event_y, "Helvetica-Bold", 18, NAVY_MID)
+            # Vertical separator lines between columns
+            c.setStrokeColor(GREY_LIGHT)
+            c.setLineWidth(0.5)
+            c.line(W * 0.35, header_bot + 2 * mm, W * 0.35, header_top - 2 * mm)
+            c.line(W * 0.65, header_bot + 2 * mm, W * 0.65, header_top - 2 * mm)
 
-            # ── Date line ──
-            date_y = event_y - 7*mm
-            date_str = f"Held on {event_date_fmt}  ·  Issued on {issued_date_fmt}"
-            self._center_text(c, date_str, W/2, date_y, "Helvetica", 10, GREY_MID)
+            # Left column — Club / Organisation
+            left_label = club if club else org
+            c.setFillColor(NAVY)
+            c.setFont("Helvetica-Bold", 11)
+            # Auto-scale if too long
+            while c.stringWidth(left_label, "Helvetica-Bold", 11) > W * 0.28 and 11 > 7:
+                c.setFont("Helvetica-Bold", c._fontsize - 1)
+            c.drawCentredString(W * 0.175, header_bot + 15 * mm, left_label)
+            c.setFont("Helvetica", 8)
+            c.setFillColor(GREY_DARK)
+            sub_left = department if department else "Certificate Issuing Authority"
+            c.drawCentredString(W * 0.175, header_bot + 9 * mm, sub_left)
 
-            # ── Gold divider above signatures ──
-            div2_y = date_y - 10*mm
-            self._draw_decorative_divider(c, W, div2_y, 0.6)
+            # Centre column — CertChain branding
+            c.setFillColor(NAVY)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawCentredString(W / 2, header_bot + 18 * mm, "CERTCHAIN")
+            c.setFont("Helvetica-Bold", 8.5)
+            c.drawCentredString(W / 2, header_bot + 12 * mm, "BLOCKCHAIN CERTIFICATE VERIFICATION SYSTEM")
+            c.setFillColor(GOLD)
+            c.setFont("Helvetica", 7.5)
+            c.drawCentredString(W / 2, header_bot + 7 * mm, "Tamper-Proof  ·  Blockchain-Anchored  ·  DID-Verified")
 
-            # ── Signature blocks ──
-            sig_y   = div2_y - 12*mm
-            sig_lx  = W * 0.25   # left signature x
-            sig_rx  = W * 0.75   # right signature x
+            # Right column — Issuing person + designation
+            c.setFillColor(NAVY)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawCentredString(W * 0.825, header_bot + 15 * mm, issuer)
+            c.setFont("Helvetica", 8)
+            c.setFillColor(GREY_DARK)
+            c.drawCentredString(W * 0.825, header_bot + 9 * mm, issuer_desig)
 
-            self._draw_signature_block(c, sig_lx, issuer, "Issuing Authority", sig_y)
-            self._draw_signature_block(c, sig_rx, org,    "Institution",       sig_y)
+            # Horizontal divider below header
+            c.setStrokeColor(GREY_LIGHT)
+            c.setLineWidth(0.6)
+            c.line(20 * mm, header_bot, W - 20 * mm, header_bot)
 
-            # ── Gold seal / medallion ──
-            seal_x = W / 2
-            seal_y = div2_y - 11*mm
-            self._draw_gold_seal(c, seal_x, seal_y, r=18)
+            # ── 5. LARGE EVENT NAME ─────────────────────────────────────────────
+            event_y = header_bot - 16 * mm
 
-            # ── QR code (bottom-right, inside border) ──
-            qr_size  = 60
-            qr_right = W - 22*mm
-            qr_bot   = 12*mm + 2*mm
+            # Auto-scale font to fit
+            event_font_size = 42
+            while c.stringWidth(event, "Helvetica-Bold", event_font_size) > W * 0.68 and event_font_size > 20:
+                event_font_size -= 2
+
+            c.setFillColor(NAVY)
+            c.setFont("Helvetica-Bold", event_font_size)
+            c.drawCentredString(W / 2, event_y, event)
+
+            # ── 6. "Certificate of Achievement" italic subtitle ─────────────────
+            sub_y = event_y - 9 * mm
+            c.setFillColor(GREY_DARK)
+            c.setFont("Times-Italic", 15)
+            c.drawCentredString(W / 2, sub_y, "Certificate of Achievement")
+
+            # ── 7. GOLD RIBBON BANNER ───────────────────────────────────────────
+            banner_w   = W * 0.58
+            banner_h   = 9 * mm
+            banner_x   = (W - banner_w) / 2
+            banner_y   = sub_y - 13 * mm
+
+            c.setFillColor(GOLD)
+            c.roundRect(banner_x, banner_y, banner_w, banner_h, 3, fill=1, stroke=0)
+
+            c.setFillColor(NAVY)
+            c.setFont("Helvetica-Bold", 8.5)
+            c.drawCentredString(W / 2, banner_y + 3 * mm, "THIS CERTIFICATE IS PROUDLY PRESENTED TO")
+
+            # Three dots on each side of banner
+            dot_r  = 3
+            dot_y  = banner_y + banner_h / 2
+            for i, dx in enumerate([banner_x - 9, banner_x - 17, banner_x - 25]):
+                c.setFillColor(NAVY)
+                c.circle(dx, dot_y, dot_r, fill=1, stroke=0)
+            for i, dx in enumerate([banner_x + banner_w + 9, banner_x + banner_w + 17, banner_x + banner_w + 25]):
+                c.setFillColor(NAVY)
+                c.circle(dx, dot_y, dot_r, fill=1, stroke=0)
+
+            # ── 8. RECIPIENT NAME ───────────────────────────────────────────────
+            name_y = banner_y - 14 * mm
+
+            name_font = "Helvetica-Bold"
+            name_size = 32
+            while c.stringWidth(name, name_font, name_size) > W * 0.65 and name_size > 18:
+                name_size -= 2
+
+            c.setFillColor(NAVY_LIGHT)
+            c.setFont(name_font, name_size)
+            c.drawCentredString(W / 2, name_y, name)
+
+            # Underline beneath name
+            name_w_px = c.stringWidth(name, name_font, name_size)
+            ul_y = name_y - 2.5 * mm
+            c.setStrokeColor(GREY_DARK)
+            c.setLineWidth(0.8)
+            c.line(W / 2 - name_w_px / 2 - 12, ul_y, W / 2 + name_w_px / 2 + 12, ul_y)
+
+            # ── 9. DESCRIPTION PARAGRAPH ────────────────────────────────────────
+            desc_y = ul_y - 6 * mm
+
+            reg_text  = f" (Reg. No: {participant})" if participant else ""
+            date_text = f" on {event_date_fmt}" if event_date_fmt else ""
+
+            # Build organiser string from club + department + org
+            org_parts = [p for p in [club, department, org] if p]
+            organiser = ", ".join(org_parts) if org_parts else org
+
+            line1 = f"for his/her active participation in {event} organized by {organiser}{reg_text}{date_text}."
+
+            c.setFont("Helvetica", 10)
+            max_w = W * 0.72
+            c.setFillColor(GREY_DARK)
+            if c.stringWidth(line1, "Helvetica", 10) <= max_w:
+                c.drawCentredString(W / 2, desc_y, line1)
+            else:
+                part1 = f"for his/her active participation in {event}"
+                part2 = f"organized by {organiser}{reg_text}{date_text}."
+                c.drawCentredString(W / 2, desc_y,          part1)
+                c.drawCentredString(W / 2, desc_y - 5 * mm, part2)
+                desc_y -= 5 * mm
+
+            # ── 10. SIGNATURE BLOCKS ────────────────────────────────────────────
+            # Show: issuer name + their designation | Head of Department / dept | Dean / org
+            sig_y = desc_y - 22 * mm
+
+            sig_configs = [
+                (W * 0.22, issuer,                  issuer_desig),
+                (W * 0.50, "Head of Department",    department if department else org),
+                (W * 0.78, "Dean / Principal",      org),
+            ]
+            for sx, lbl, role in sig_configs:
+                self._draw_sig_block(c, sx, lbl, role, sig_y)
+
+            # ── 11. ISSUED ON — bottom centre ───────────────────────────────────
+            footer_y = 7 * mm + 4 * mm
+            issued_str = f"Issued On: {issued_date_fmt}"
+            c.setFillColor(GREY_DARK)
+            c.setFont("Helvetica-Bold", 9)
+            c.drawCentredString(W / 2, footer_y, issued_str)
+
+            # ── 12. QR code — bottom right ──────────────────────────────────────
+            qr_size = 58
+            qr_x    = W - 14 * mm - qr_size
+            qr_y    = 7 * mm + 2 * mm
             if qr_path and os.path.exists(qr_path):
                 c.drawImage(
                     ImageReader(qr_path),
-                    qr_right - qr_size, qr_bot,
+                    qr_x, qr_y,
                     width=qr_size, height=qr_size,
-                    preserveAspectRatio=True, mask='auto'
+                    preserveAspectRatio=True, mask='auto',
                 )
                 c.setFillColor(GREY_MID)
                 c.setFont("Helvetica", 6)
-                c.drawCentredString(qr_right - qr_size/2, qr_bot - 3*mm, "Scan to Verify")
+                c.drawCentredString(qr_x + qr_size / 2, qr_y - 3 * mm, "Scan to Verify")
 
-            # ── Certificate ID and hash (bottom centre) ──
-            footer_y = 12*mm + 3.5*mm
+            # ── 13. Cert ID — bottom left ────────────────────────────────────────
             c.setFillColor(GREY_MID)
-            c.setFont("Helvetica", 7)
-            c.drawCentredString(W/2, footer_y + 4*mm,
-                                f"Certificate ID: {cert_id}")
+            c.setFont("Helvetica", 6.5)
+            c.drawString(14 * mm, footer_y, f"ID: {cert_id}")
             if cert_hash:
-                c.drawCentredString(W/2, footer_y,
-                                    f"SHA-256: {cert_hash[:48]}…")
+                c.drawString(14 * mm, footer_y - 3.5 * mm,
+                             f"SHA-256: {cert_hash[:32]}…")
 
             c.save()
-            logger.info(f"Professional PDF generated: {pdf_path}")
+            logger.info(f"Certificate PDF generated: {pdf_path}")
             return pdf_path
 
         except Exception as e:
@@ -409,14 +554,18 @@ class CertificateGenerator:
             cert_id = self.generate_certificate_id()
 
             cert_info = {
-                'certificate_id': cert_id,
-                'recipient_name': certificate_data.get('recipient_name', ''),
-                'event_name':     certificate_data.get('event_name', ''),
-                'event_date':     certificate_data.get('event_date', ''),
-                'issued_date':    datetime.now().strftime('%Y-%m-%d'),
-                'event_id':       certificate_data.get('event_id'),
-                'issuer_name':    certificate_data.get('issuer_name', 'Administrator'),
-                'organization':   certificate_data.get('organization', 'KL University'),
+                'certificate_id':    cert_id,
+                'recipient_name':    certificate_data.get('recipient_name', ''),
+                'event_name':        certificate_data.get('event_name', ''),
+                'event_date':        certificate_data.get('event_date', ''),
+                'participant_id':    certificate_data.get('participant_id', ''),
+                'event_id':          certificate_data.get('event_id'),
+                'issuer_name':       certificate_data.get('issuer_name', 'Administrator'),
+                'issuer_designation': certificate_data.get('issuer_designation', 'Issuing Authority'),
+                'club_name':         certificate_data.get('club_name', ''),
+                'department':        certificate_data.get('department', ''),
+                'organization':      certificate_data.get('organization', 'KARE'),
+                'template_path':     certificate_data.get('template_path', ''),
             }
 
             # Certificate hash
@@ -450,7 +599,7 @@ class CertificateGenerator:
                 'hash':           cert_hash,
                 'qr_code_data':   qr_data,
                 'qr_code_path':   qr_path,
-                'image_path':     pdf_path,   # kept for DB compat
+                'image_path':     pdf_path,
                 'pdf_path':       pdf_path,
                 'blockchain_tx':  blockchain_tx,
                 'block_number':   block_number,
@@ -467,13 +616,15 @@ class CertificateGenerator:
         for r in recipients_data:
             try:
                 data = {
-                    'recipient_name': r.get('recipient_name', ''),
+                    'recipient_name':  r.get('recipient_name', ''),
                     'recipient_email': r.get('recipient_email', ''),
-                    'event_name':  event_info['name'],
-                    'event_date':  event_info['date'],
-                    'event_id':    event_info['id'],
-                    'issuer_name': event_info.get('issuer_name', 'Administrator'),
-                    'organization': event_info.get('organization', 'KL University'),
+                    'event_name':      event_info['name'],
+                    'event_date':      event_info['date'],
+                    'event_id':        event_info['id'],
+                    'participant_id':  r.get('participant_id', ''),
+                    'issuer_name':     event_info.get('issuer_name', 'Administrator'),
+                    'organization':    event_info.get('organization', 'KARE'),
+                    'template_path':   event_info.get('template_path', ''),
                 }
                 result = self.generate_single_certificate(data)
                 if result:
@@ -496,19 +647,18 @@ class CertificateGenerator:
                         recipients.append({
                             'recipient_name':  name,
                             'recipient_email': row.get('email', '').strip(),
+                            'participant_id':  row.get('participant_id', '').strip(),
                         })
         except Exception as e:
             logger.error(f"CSV parse error: {e}")
         return recipients
 
-    # ── Legacy image helpers (kept so nothing breaks) ─────────────────────────
+    # ── Legacy stubs (kept so nothing breaks) ─────────────────────────────────
 
     def create_certificate_image(self, template_path, certificate_data, fields_config):
-        """Legacy stub — returns the PDF path for backwards compatibility."""
         return self.generate_pdf_certificate(certificate_data)
 
     def image_to_pdf(self, image_path, certificate_id):
-        """Legacy stub — image IS the PDF now, just return the path."""
         return image_path
 
 

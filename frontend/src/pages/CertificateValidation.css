@@ -585,3 +585,27 @@
   justify-content: flex-end;
   flex-wrap: wrap;
 }
+
+.cv-field-error {
+  color: #f87171;
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+}
+
+.cv-detail-mini {
+  margin-top: 0.75rem;
+  background: rgba(255,255,255,0.04);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+.cv-detail-mini .cv-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.3rem 0;
+  font-size: 0.82rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.cv-detail-mini .cv-detail-row:last-child { border-bottom: none; }
+.cv-detail-mini .cv-detail-row span { color: #94a3b8; }
+.cv-detail-mini .cv-detail-row strong { color: #e2e8f0; }

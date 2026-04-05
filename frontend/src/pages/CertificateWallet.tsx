@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
@@ -19,6 +19,10 @@ const CertificateWallet: React.FC = () => {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [expandedId, setExpandedId]     = useState<string | null>(null);
   const [filter, setFilter]             = useState<'all' | 'active' | 'revoked'>('all');
+  const [viewingCert, setViewingCert]   = useState<Certificate | null>(null);
+  const [pdfUrl, setPdfUrl]             = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading]     = useState(false);
+  const pdfUrlRef                       = useRef<string | null>(null);
 
   useEffect(() => { fetchCertificates(); }, []);
 
@@ -42,6 +46,30 @@ const CertificateWallet: React.FC = () => {
       window.URL.revokeObjectURL(url);
     } catch (err: any) { setError(err.response?.data?.detail || 'Download failed'); }
     finally { setDownloadingId(null); }
+  };
+
+  const openPdfViewer = async (cert: Certificate) => {
+    setViewingCert(cert);
+    setPdfLoading(true);
+    setPdfUrl(null);
+    try {
+      const r = await api.get(`/certificates/download/${cert.certificate_id}`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      // revoke previous
+      if (pdfUrlRef.current) window.URL.revokeObjectURL(pdfUrlRef.current);
+      pdfUrlRef.current = url;
+      setPdfUrl(url);
+    } catch {
+      setPdfUrl(null);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
+  const closePdfViewer = () => {
+    setViewingCert(null);
+    setPdfUrl(null);
+    if (pdfUrlRef.current) { window.URL.revokeObjectURL(pdfUrlRef.current); pdfUrlRef.current = null; }
   };
 
   const total   = certificates.length;
@@ -254,8 +282,9 @@ const CertificateWallet: React.FC = () => {
                         <i className={`fas ${expanded ? 'fa-chevron-up' : 'fa-chevron-down'}`} />
                       </button>
                       <button
-                        onClick={() => navigate(`/verify/${cert.certificate_id}`)}
-                        className="ds-btn ds-btn-ghost ds-btn-sm" style={{ padding:'7px 12px' }}>
+                        onClick={() => openPdfViewer(cert)}
+                        className="ds-btn ds-btn-ghost ds-btn-sm" style={{ padding:'7px 12px' }}
+                        title="View Certificate">
                         <i className="fas fa-eye" />
                       </button>
                     </div>
@@ -276,6 +305,99 @@ const CertificateWallet: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* ── PDF Viewer Modal ── */}
+      <AnimatePresence>
+        {viewingCert && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={closePdfViewer}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9999,
+              background: 'rgba(0,0,0,0.85)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 20,
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: '#1a1a2e', borderRadius: 20,
+                border: '1px solid rgba(99,102,241,0.3)',
+                boxShadow: '0 24px 80px rgba(0,0,0,0.7)',
+                width: '100%', maxWidth: 960,
+                display: 'flex', flexDirection: 'column',
+                maxHeight: '92vh',
+              }}
+            >
+              {/* Modal header */}
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(99,102,241,0.2)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#6366f1,#a78bfa)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <i className="fas fa-certificate" style={{ color: '#fff', fontSize: '0.9rem' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--c-text)', fontSize: '0.95rem' }}>
+                      {viewingCert.event_name}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--c-text-3)' }}>
+                      {viewingCert.recipient_name} &nbsp;·&nbsp; {viewingCert.certificate_id}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {pdfUrl && (
+                    <button
+                      className="ds-btn ds-btn-primary ds-btn-sm"
+                      onClick={() => {
+                        const a = document.createElement('a');
+                        a.href = pdfUrl; a.download = `certificate_${viewingCert.certificate_id}.pdf`;
+                        a.click();
+                      }}>
+                      <i className="fas fa-download" /> Download
+                    </button>
+                  )}
+                  <button className="ds-btn ds-btn-ghost ds-btn-sm" onClick={closePdfViewer} style={{ padding: '7px 12px' }}>
+                    <i className="fas fa-xmark" />
+                  </button>
+                </div>
+              </div>
+
+              {/* PDF area */}
+              <div style={{ flex: 1, minHeight: 0, padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {pdfLoading ? (
+                  <div style={{ textAlign: 'center', padding: 40 }}>
+                    <span className="ds-spinner ds-spinner-lg" style={{ margin: '0 auto 16px' }} />
+                    <p style={{ color: 'var(--c-text-3)', fontSize: '0.875rem' }}>Loading certificate…</p>
+                  </div>
+                ) : pdfUrl ? (
+                  <iframe
+                    src={pdfUrl}
+                    title="Certificate"
+                    style={{
+                      width: '100%',
+                      height: '65vh',
+                      border: 'none',
+                      borderRadius: 12,
+                      background: '#fff',
+                    }}
+                  />
+                ) : (
+                  <div style={{ textAlign: 'center', padding: 40 }}>
+                    <i className="fas fa-triangle-exclamation" style={{ fontSize: '2rem', color: '#f87171', marginBottom: 12, display: 'block' }} />
+                    <p style={{ color: '#fca5a5', fontSize: '0.875rem' }}>Could not load certificate PDF.</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

@@ -89,9 +89,11 @@ const CertificateGeneration: React.FC = () => {
     recipientName: '',
     recipientEmail: '',
     employeeId: '',
+    // Certificate display fields
+    issuerName: '',
+    issuerDesignation: '',
+    clubName: '',
     department: '',
-    position: '',
-    company: ''
   });
   
   // Bulk certificate form
@@ -205,9 +207,13 @@ const CertificateGeneration: React.FC = () => {
       setLoading(true);
       
       const response = await api.post('/admin/certificates/generate-single', {
-        event_id: parseInt(singleForm.eventId),
-        recipient_name: singleForm.recipientName,
-        recipient_email: singleForm.recipientEmail?.trim() || undefined
+        event_id:           parseInt(singleForm.eventId),
+        recipient_name:     singleForm.recipientName,
+        recipient_email:    singleForm.recipientEmail?.trim() || undefined,
+        issuer_name:        singleForm.issuerName?.trim() || undefined,
+        issuer_designation: singleForm.issuerDesignation?.trim() || undefined,
+        club_name:          singleForm.clubName?.trim() || undefined,
+        department:         singleForm.department?.trim() || undefined,
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -221,9 +227,10 @@ const CertificateGeneration: React.FC = () => {
         recipientName: '',
         recipientEmail: '',
         employeeId: '',
+        issuerName: '',
+        issuerDesignation: '',
+        clubName: '',
         department: '',
-        position: '',
-        company: ''
       });
       
     } catch (err: any) {
@@ -439,25 +446,36 @@ const CertificateGeneration: React.FC = () => {
                     </Col>
                   </Row>
 
+                  {/* Certificate Issuance Details */}
+                  <hr />
+                  <p className="text-muted small mb-3">
+                    <i className="fas fa-info-circle me-1"></i>
+                    The details below will be printed on the certificate.
+                  </p>
+
                   <Row>
                     <Col md={6}>
                       <Form.Group className="mb-3">
-                        <Form.Label>Employee ID</Form.Label>
+                        <Form.Label>Issuing Authority Name</Form.Label>
                         <Form.Control
                           type="text"
-                          value={singleForm.employeeId}
-                          onChange={(e) => handleSingleFormChange('employeeId', e.target.value)}
+                          placeholder="e.g. Dr. R. Raja Sekar"
+                          value={singleForm.issuerName}
+                          onChange={(e) => handleSingleFormChange('issuerName', e.target.value)}
                         />
+                        <Form.Text className="text-muted">Person who signs / issues the certificate</Form.Text>
                       </Form.Group>
                     </Col>
                     <Col md={6}>
                       <Form.Group className="mb-3">
-                        <Form.Label>Department</Form.Label>
+                        <Form.Label>Issuing Authority Designation</Form.Label>
                         <Form.Control
                           type="text"
-                          value={singleForm.department}
-                          onChange={(e) => handleSingleFormChange('department', e.target.value)}
+                          placeholder="e.g. Faculty Co-Ordinator"
+                          value={singleForm.issuerDesignation}
+                          onChange={(e) => handleSingleFormChange('issuerDesignation', e.target.value)}
                         />
+                        <Form.Text className="text-muted">Their title / role</Form.Text>
                       </Form.Group>
                     </Col>
                   </Row>
@@ -465,22 +483,26 @@ const CertificateGeneration: React.FC = () => {
                   <Row>
                     <Col md={6}>
                       <Form.Group className="mb-3">
-                        <Form.Label>Position</Form.Label>
+                        <Form.Label>Club / Organization</Form.Label>
                         <Form.Control
                           type="text"
-                          value={singleForm.position}
-                          onChange={(e) => handleSingleFormChange('position', e.target.value)}
+                          placeholder="e.g. GFG KARE Student Chapter"
+                          value={singleForm.clubName}
+                          onChange={(e) => handleSingleFormChange('clubName', e.target.value)}
                         />
+                        <Form.Text className="text-muted">Club or organization hosting the event</Form.Text>
                       </Form.Group>
                     </Col>
                     <Col md={6}>
                       <Form.Group className="mb-3">
-                        <Form.Label>Company</Form.Label>
+                        <Form.Label>Department</Form.Label>
                         <Form.Control
                           type="text"
-                          value={singleForm.company}
-                          onChange={(e) => handleSingleFormChange('company', e.target.value)}
+                          placeholder="e.g. Department of Computer Science"
+                          value={singleForm.department}
+                          onChange={(e) => handleSingleFormChange('department', e.target.value)}
                         />
+                        <Form.Text className="text-muted">Department organizing the event</Form.Text>
                       </Form.Group>
                     </Col>
                   </Row>
