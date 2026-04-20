@@ -686,12 +686,15 @@ const AdminDashboard: React.FC = () => {
                 <Button
                   variant="success"
                   onClick={() => setShowCertModal(true)}
-                  disabled={events.filter(e => e.status === 'approved').length === 0}
+                  disabled={events.filter(e => e.is_approved).length === 0}
                 >
                   <i className="fas fa-certificate me-2"></i>
                   Generate Certificates
                 </Button>
-                <Button variant="info">
+                <Button
+                  variant="info"
+                  onClick={() => setShowEventModal(true)}
+                >
                   <i className="fas fa-upload me-2"></i>
                   Upload Template
                 </Button>

@@ -1,306 +1,66 @@
-# 🎓 Secure Blockchain-Based Certificate Generation and Validation Framework
+# Secure Blockchain Certificate System
 
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/pinnamanenipraneeth08/certificate-system)
-[![Python](https://img.shields.io/badge/Python-3.8+-green)](https://python.org)
-# 🎓 Secure Blockchain-Based Certificate Generation and Validation Framework
+This project is a full-stack certificate issuance and verification platform with optional blockchain anchoring.
 
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/pinnamanenipraneeth08/certificate-system)
-[![Python](https://img.shields.io/badge/Python-3.8+-green)](https://python.org)
-[![React](https://img.shields.io/badge/React-18+-blue)](https://reactjs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-4.9+-blue)](https://typescriptlang.org)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+## What It Includes
 
-## 🌟 Project Overview
-A real-time digital certificate management system leveraging blockchain for tamper-proof certificate generation, validation, and management, with enterprise-grade security and role-based access control. This README reflects the actual working state of the project as found in this repository.
+- `backend/`: FastAPI API, auth, certificate generation/verification, admin flows
+- `frontend/`: React + TypeScript web application
+- `contracts/`: Solidity contract, deployment script, and blockchain test utilities
 
-## ✨ Key Features
-- 🔐 **Blockchain-anchored certificates** using Ethereum smart contracts
-- 👥 **Role-based access control** (Super-Admin, Admin, User)
-- 📄 **PDF certificate generation** with QR codes and digital signatures
-- ✅ **Multi-layer validation system** with OCR tamper detection
-- 🔍 **Advanced forgery detection** using image analysis
-- 📱 **Responsive web interface** with Bootstrap UI
-- 📧 **Email notifications** for all certificate operations
-- 🔒 **Comprehensive security features** and audit logging
-- ⚡ **Real-time updates** and notifications
-- 🌐 **RESTful API** with OpenAPI documentation
-- 🎯 **Bulk certificate generation** from CSV files
-- 📊 **Analytics dashboard** with comprehensive reporting
+## Current Stack
 
-## 🛠️ Tech Stack
-- **Backend**: Python FastAPI with SQLAlchemy ORM
-- **Frontend**: React.js with TypeScript and Bootstrap
-- **Blockchain**: Ethereum with Web3.py and Solidity smart contracts
-- **Database**: SQLite (development) / PostgreSQL (production)
-- **PDF Generation**: ReportLab with custom templates
-- **OCR & Analysis**: Tesseract + OpenCV for tamper detection
-- **QR Codes**: qrcode library with custom validation
-- **Authentication**: JWT tokens with role-based permissions
+- Backend: FastAPI, SQLAlchemy, JWT auth, OCR/image analysis utilities
+- Frontend: React 18, TypeScript, Bootstrap
+- Blockchain: Ethereum (Web3.py + Solidity contract)
+- Database: SQLite by default (`backend/certificate_system.db`)
 
-## 🚀 Quick Start
+## Local Setup
 
-### ⚡ One-Command Setup
+### 1) Backend
 
 ```powershell
-# Clone and setup everything
-git clone https://github.com/yourusername/certificate-system.git
-cd certificate-system
-📊 **Analytics dashboard**
-```
-
- **Backend**: Python FastAPI (see `backend/`)
- **Frontend**: React.js + TypeScript (see `frontend/`)
- **Blockchain**: Ethereum, Solidity, Web3.py (see `contracts/`)
- **Database**: SQLite (dev, see `backend/certificate_system.db`)
- **PDF Generation**: ReportLab
- **OCR & Analysis**: Tesseract, OpenCV
- **QR Codes**: qrcode library
- **Authentication**: JWT tokens
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8001
-- **API Documentation**: http://localhost:8001/docs
-
-**Default Admin Credentials:**
-- Email: `admin@certificate-system.com`
-- Password: `admin123`
-
-### 🐳 Docker Deployment (Production)
-
-```powershell
-
-# Check service status
-# View logs
-docker-compose logs -f
-```
-
-## System Architecture
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Frontend      │    │    Backend       │    │   Database      │
-│   (React)       │◄──►│   (FastAPI)      │◄──►│   (SQLite)      │
-│   Port: 3000    │    │   Port: 8001     │    │                 │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-         │                       │                       │
-         │                       ▼                       │
-         ▼              ┌──────────────────┐              ▼
-┌─────────────────┐    │   Blockchain     │    ┌─────────────────┐
-│   File Storage  │    │   (Ethereum)     │    │   Email Service │
-│   & Templates   │    │   Smart Contract │    │   (SMTP)        │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
-
-## Blockchain Integration
-
-### Smart Contract Features
-- **Certificate Hash Storage**: Immutable storage of certificate hashes
-- **Verification System**: Blockchain-based certificate validation
-- **Revocation Management**: Decentralized certificate revocation
-- **Multi-Issuer Support**: Role-based issuer authorization
-- **Event Logging**: Comprehensive audit trail on blockchain
-
-### Deployment
-```powershell
-python test_blockchain.py
-```
-
-## User Roles & Permissions
-
-### Super-Admin
-- **Full system control**: All administrative functions
-- **User management**: Approve/reject user registrations
-- **Certificate revocation**: Revoke any certificate
-- **System configuration**: Modify system settings
-
-### Admin
-
-### User
-
-## Security Features
-- ✅ **XSS protection** with content security policies
-- ✅ **Rate limiting** to prevent abuse
-- ✅ **CORS policy** configuration
-- ✅ **Security headers** implementation
-- **Comprehensive audit trails**
-
+cd backend
 python -m venv venv
-venv\Scripts\activate  # Windows
+venv\Scripts\activate
 pip install -r requirements.txt
-
-# Initialize database
+copy .env.example .env
 python init_db.py
-
-# Start development server
-uvicorn main:app --reload --host 0.0.0.0 --port 8001
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8001
 ```
 
-### Frontend Setup
+Backend URLs:
+
+- API: `http://localhost:8001`
+- Swagger docs: `http://localhost:8001/docs`
+- ReDoc: `http://localhost:8001/redoc`
+
+### 2) Frontend
+
 ```powershell
 cd frontend
 npm install
 npm start
 ```
 
-### Blockchain Setup
-```powershell
-cd contracts
-pip install -r requirements.txt
+Frontend URL:
 
-# Configure .env with your Ethereum credentials
-# Deploy smart contract
-python deploy_contract.py
-```
+- App: `http://localhost:3000`
 
-## Project Structure
+## Environment Notes
 
-```
-certificate-system/
-├── backend/                    # FastAPI backend
-│   ├── app/
-│   │   ├── api/               # API routes and endpoints
-│   │   ├── core/              # Core functionality & config
-│   │   ├── models/            # Database models & schemas
-│   │   └── services/          # Business logic & services
-│   ├── certificates/          # Generated certificate files
-│   ├── templates/             # Certificate templates
-│   └── uploads/               # File upload storage
-├── frontend/                   # React.js frontend
-│   ├── src/
-│   │   ├── components/        # Reusable React components
-│   │   ├── pages/             # Page components
-│   │   └── services/          # API services & utilities
-│   └── public/                # Static assets
-├── contracts/                  # Blockchain smart contracts
-│   ├── CertificateRegistry.sol # Main smart contract
-│   ├── deploy_contract.py     # Deployment script
-│   └── test_blockchain.py     # Integration tests
-├── docs/                      # Documentation
-├── setup.py                   # Complete system setup
-└── start.py                   # Quick start script
-```
+- Keep secrets in `backend/.env` (never commit this file).
+- `PRIVATE_KEY` is required only when you want on-chain writes.
+- App still works without blockchain connection for core certificate flows.
 
-## Configuration
+## Important API Routes
 
-### Environment Variables (.env)
-```env
-# Database
-DATABASE_URL=sqlite:///./certificate_system.db
+- Health: `GET /api/v1/health`
+- Auth: `POST /api/v1/auth/login`, `POST /api/v1/auth/register`
+- Certificate verification: routes under `POST /api/v1/certificates/*`
+- System info: `GET /api/v1/system/info`
 
-# Security
-SECRET_KEY=your-super-secret-key-here
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+## Related Docs
 
-# Blockchain (Ethereum Sepolia Testnet)
-ETHEREUM_RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID
-PRIVATE_KEY=your_ethereum_private_key_without_0x
-CONTRACT_ADDRESS=deployed_contract_address
-
-# Email (Optional)
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-MAIL_USERNAME=your-email@gmail.com
-MAIL_PASSWORD=your-app-password
-
-# File Storage
-CERTIFICATES_DIR=./certificates
-TEMPLATES_DIR=./templates
-UPLOADS_DIR=./uploads
-```
-
-## API Documentation
-
-The system provides comprehensive API documentation:
-- **Interactive API docs**: http://localhost:8001/docs
-### Key API Endpoints
-
-#### Authentication
-- `POST /auth/login` - User login
-#### Certificates
-- `POST /admin/certificates/generate-single` - Generate single certificate
-#### Events
-- `POST /events/` - Create new event
-#### Blockchain
-- `GET /blockchain/status` - Blockchain connection status
-## Production Deployment
-
-### Docker Production Setup
-```powershell
-# Production build
-docker-compose -f docker-compose.prod.yml build
-
-# Deploy with SSL
-docker-compose -f docker-compose.prod.yml up -d
-
-# Setup reverse proxy (Nginx)
-# Configure SSL certificates
-# Setup domain routing
-```
-
-### Manual Production Setup
-1. **Setup production database** (PostgreSQL recommended)
-2. **Configure environment variables** for production
-3. **Deploy smart contract** to Ethereum mainnet
-4. **Setup SSL certificates** and domain
-5. **Configure reverse proxy** (Nginx/Apache)
-6. **Setup monitoring** and logging
-7. **Configure backup** procedures
-
-## Troubleshooting
-
-### Common Issues
-
-#### Backend won't start
-```powershell
-# Check Python version
-python --version
-
-# Reinstall dependencies
-pip install -r requirements.txt
-
-# Check database
-python init_db.py
-```
-
-#### Frontend build fails
-```powershell
-# Clear cache and reinstall
-rm -rf node_modules package-lock.json
-npm install
-
-# Check Node.js version
-node --version
-```
-
-#### Blockchain connection fails
-```powershell
-# Test connection
-cd contracts
-python test_blockchain.py
-
-# Check configuration
-# Verify Infura project ID
-# Check private key format
-```
-
-## Contributing
-
-### Development Workflow
-1. **Fork the repository**
-2. **Create feature branch** (`git checkout -b feature/amazing-feature`)
-3. **Make changes** and add tests
-4. **Run test suite** (`python -m pytest`)
-5. **Commit changes** (`git commit -m 'Add amazing feature'`)
-6. **Push to branch** (`git push origin feature/amazing-feature`)
-7. **Open Pull Request**
-
-### Code Standards
-- **Python**: Follow PEP 8 style guide
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- **OpenZeppelin** for smart contract libraries
----
-**Made with ❤️ for secure, verifiable digital certificates**
+- `RUN_AND_TEST.md`: execution and verification steps
+- `contracts/README.md`: contract setup and deployment

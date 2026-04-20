@@ -1,15 +1,14 @@
-# Core FastAPI dependencies
+# Core API
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 
-# Database
+# Database and migrations
 sqlalchemy>=1.4.48
-# psycopg2-binary==2.9.9  # Comment out for SQLite development
 alembic==1.13.1
 
-# Authentication & Security
+# Auth and security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
@@ -18,18 +17,15 @@ cryptography>=41.0.0
 # Blockchain
 web3>=6.11.0
 eth-account>=0.10.0
-# py-solcx removed (not used; contract is pre-deployed via Web3)
 
-# PDF Generation
+# PDF and certificate assets
 reportlab==4.0.7
 weasyprint==61.2
 PyPDF2==3.0.1
 pdf2image>=1.16.3
-
-# QR Code Generation
 qrcode[pil]==7.4.2
 
-# OCR & Image Processing
+# OCR and image processing
 pytesseract==0.3.10
 opencv-python>=4.8.0
 pillow>=10.1.0
@@ -40,8 +36,6 @@ python-dotenv==1.0.0
 httpx==0.25.2
 pandas>=2.0.0
 email-validator==2.1.0
-
-# File handling
 aiofiles==23.2.0
 
 # Testing
